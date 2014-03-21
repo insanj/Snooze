@@ -73,7 +73,7 @@ So, I assumed overriding that to swap out the notification argument would work e
 }
 ]`
 
-`[Snooze] Added 10
+`   [Snooze] Added 10
 		to current time of 2014-03-21 03:22:01 +0000,
 
 		to alter NSConcreteNotification 0x178c5a7c0 {
@@ -145,23 +145,23 @@ Which ended me up in the PCPersistentTimer class, which was part of the sister f
 
 	`SpringBoard[30169]: [Snooze] Overriding preset time interval 9.999883 to be personalized 1395372853.630588...`
 
-`%hook PCPersistentTimer
+`   %hook PCPersistentTimer
 
 
-- (id)initWithTimeInterval:(double)arg1 serviceIdentifier:(id)arg2 target:(id)arg3 selector:(SEL)arg4 userInfo:(id)arg5 {
-	if( sz_overrideInterval != 0.0) {
-		NSLog(@"[Snooze] Overriding preset time interval %f to be personalized %f...", arg1, sz_overrideInterval);
-		double snoozeInterval = sz_overrideInterval;
-		sz_overrideInterval = 0.0;
-		return %orig(snoozeInterval, arg2, arg3, arg4, arg5);
+	- (id)initWithTimeInterval:(double)arg1 serviceIdentifier:(id)arg2 target:(id)arg3 selector:(SEL)arg4 userInfo:(id)arg5 {
+		if( sz_overrideInterval != 0.0) {
+			NSLog(@"[Snooze] Overriding preset time interval %f to be personalized %f...", arg1, sz_overrideInterval);
+			double snoozeInterval = sz_overrideInterval;
+			sz_overrideInterval = 0.0;
+			return %orig(snoozeInterval, arg2, arg3, arg4, arg5);
+		}
+
+		else {
+			return %orig();
+		}
 	}
 
-	else {
-		return %orig();
-	}
-}
-
-%end`
+   %end`
 
 But that had no additional effect on the codebase. Everything operated as it had before, meaning I was simply following the crumb trail *down*, instead of *up*. Without any other choice, I went back to the beautiful SBClockDataProvider, this time for -_publishAlarmsWithScheduledNotifications:
 
@@ -223,19 +223,19 @@ In essence, that translated into:
 It wasn't an override at all! It was just a SnoozeInterval, in the end, and it wanted everything but to be found. Logging all of the -integerForKey's of NSUserDefaults (the universal XML-wrapped quick-and-dirty storage system for iOS, useful for tiny values) made me realize Apple uses it a lot. Like, a whole lot. For tons of different things. I had no idea. Just for fun, I %hook'd the method, with a very simply body:
 
 
-`%hook NSUserDefaults
+`   %hook NSUserDefaults
 
-- (NSInteger)integerForKey:(NSString *)defaultName {
-	if ([defaultName isEqualToString:@"SBLocalNotificationSnoozeIntervalOverride"]) {
-		return SZADD_AMOUNT;
+	- (NSInteger)integerForKey:(NSString *)defaultName {
+		if ([defaultName isEqualToString:@"SBLocalNotificationSnoozeIntervalOverride"]) {
+			return SZADD_AMOUNT;
+		}
+
+		else {
+			return %orig();
+		}
 	}
 
-	else {
-		return %orig();
-	}
-}
-
-%end`
+   %end`
 
 And you know what? It worked out. Perfectly. That's the only block of code that mattered. Hundreds of lines of code eliminated. Thousands written. The answer reducible to three.
 
