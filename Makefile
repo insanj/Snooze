@@ -6,6 +6,7 @@ include theos/makefiles/common.mk
 
 TWEAK_NAME = Snooze
 Snooze_FILES = Snooze.xm
+Snooze_FRAMEWORKS = UIKit Foundation
 Snooze_PRIVATE_FRAMEWORKS = MobileTimer PersistentConnection
 
 include $(THEOS_MAKE_PATH)/tweak.mk

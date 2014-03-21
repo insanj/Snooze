@@ -1,102 +1,85 @@
 #import "Snooze.h"
 
-// %hook Alarm
+#define SZADD_AMOUNT 10
 
-/*
-+[<Alarm: 0x199679bf8> isSnoozeNotification:<UIConcreteLocalNotification: 0x178134dc0>
-	{
-		fire date = Thursday, March 20, 2014 at 10:16:02 PM Eastern Daylight Time,
-		time zone = (null),
-		repeat interval = 0,
-		repeat count = 0,
-		next fire date = Thursday, March 20, 2014 at 10:16:02 PM Eastern Daylight Time,
-		user info = {
-			    alarmId = "C4D933A4-0987-4DE2-91E0-51344EFB39B8";
-			    hour = 22;
-			    lastModified = "2014-03-21 02:06:17 +0000";
-			    minute = 7;
-			    repeatDay = "-1";
-			    revision = 1;
-			    soundType = 1;
-		}
-	}
- ]
-
-
-*/
-/*
-+ (BOOL)isSnoozeNotification:(UIConcreteLocalNotification *)arg1 {
-	UIConcreteLocalNotification *notification = arg1;
-
-	NSDateComponents *add = [[[NSDateComponents alloc] init] autorelease];
-    add.second = 5;
-
-	NSDate *snoozeDate = [[NSCalendar currentCalendar] dateByAddingComponents:add toDate:[NSDate date] options:0];
-	[arg1 setFireDate:snoozeDate];
-
-	NSLog(@"[Snooze] Added %i to current time of %@, to alter %@ and send %@", (int) add.second, [NSDate date], arg1.fireDate, notification);
-	return %orig(notification);
-}
-
-%end
-*/
+static NSArray *sz_alarmsToOverride;
 
 %hook SBClockDataProvider
 
-// SBApplicationClockAlarmSnoozedNotification
-/*
-void __cdecl -[SBClockDataProvider _handleAlarmSnoozedNotification:](struct SBClockDataProvider *self, SEL a2, id a3)
-{
-    struct SBClockDataProvider *v3; // r10@1
-    void *v4; // r0@1
-    void *v5; // r6@1
-    void *v6; // r5@1
-    void *v7; // r8@1
-    void *v8; // r0@1
-    void *v9; // r6@1
-    int v10; // r1@1
-    int v11; // r11@1
-    void *v12; // r0@1
-    void *v13; // r0@1
-    void *v18; // r4@1
-    void *v21; // r0@1
+// Should visually indicate snooze time change, and do the business as you'd expect,
+// the only problem is that it doesn't set the timer for the alarm snooze.
+- (void)_handleAlarmSnoozedNotification:(NSConcreteNotification *)notification {
+	NSDateComponents *add = [[[NSDateComponents alloc] init] autorelease];
+	add.second = SZADD_AMOUNT;
 
-    v3 = self;
-    v4 = objc_msgSend(a3, "userInfo");
-    v5 = objc_msgSend(v4, "objectForKey:", CFSTR("AlarmNotification"));
-    v6 = objc_msgSend(v3, "_bulletinRequestForSnoozedAlarm:", v5);
-    objc_msgSend(v3->_dataProviderProxy, "addBulletin:forDestinations:", v6, 4);
-    v7 = objc_msgSend(&OBJC_CLASS___PCPersistentTimer, "alloc");
-    v8 = objc_msgSend(v5, "fireDate");
-    v9 = objc_msgSend(v8, "timeIntervalSinceNow");
-    v11 = v10;
-    v12 = objc_msgSend(v6, "publisherBulletinID");
-    v13 = objc_msgSend(
-              v7,
-              "initWithTimeInterval:serviceIdentifier:target:selector:userInfo:",
-              v9,
-              v11,
-              CFSTR("com.apple.mobiletimer"),
-              v3,
-              "_snoozedAlarmRefired:",
-              v12);
-    __asm { VMOV.F64        D16, #1.0 }
-    v18 = v13;
-    __asm { VMOV            R2, R3, D16 }
-    objc_msgSend(v13, "setMinimumEarlyFireProportion:", _R2);
-    v21 = objc_msgSend(&OBJC_CLASS___NSRunLoop, "currentRunLoop");
-    objc_msgSend(v18, "scheduleInRunLoop:", v21);
-    j__objc_msgSend(v18, "release");
+	NSDate *snoozeDate = [[NSCalendar currentCalendar] dateByAddingComponents:add toDate:[NSDate date] options:0];
+
+	UIConcreteLocalNotification *snoozeLocal = (UIConcreteLocalNotification *) notification.userInfo[@"AlarmNotification"];
+	[snoozeLocal setFireDate:snoozeDate];
+
+	NSString *alarmId = ((UIConcreteLocalNotification  *)notification.userInfo[@"AlarmNotification"]).userInfo[@"alarmId"];
+	if (!sz_alarmsToOverride) {
+		sz_alarmsToOverride = @[alarmId];
+	}
+
+	else {
+		sz_alarmsToOverride = [sz_alarmsToOverride arrayByAddingObject:alarmId];
+	}
+
+	NSConcreteNotification *snoozeGlobal = [[%c(NSConcreteNotification) alloc] initWithName:notification.name object:notification.object userInfo:@{
+		@"AlarmNotification" : snoozeLocal }];
+
+//	NSLog(@"[Snooze] Added %i to current time of %@, to alter %@'s %@ and send %@", (int) add.second, [NSDate date], notification, snoozeLocal, snoozeGlobal);
+	%orig(snoozeGlobal);
 }
+
+/*
+
+-[<SBClockDataProvider: 0x170a7efc0> _nextAlarmForFeed:32 withNotifications:(
+	    "<UIConcreteLocalNotification: 0x1783288e0>{
+			fire date = Friday, March 21, 2014 at 12:16:01 AM Eastern Daylight Time,
+			time zone = (null),
+			repeat interval = 0,
+			repeat count = 0,
+			next fire date = Friday, March 21, 2014 at 12:16:01 AM Eastern Daylight Time,
+			user info = {
+				alarmId = \"E6A01559-F7A0-4A16-B016-CE65AC2EB953\";\n
+				hour = 0;\n
+				lastModified = \"2014-03-21 04:06:55 +0000\";\n
+				minute = 7;\n
+				repeatDay = \"-1\";\n
+				revision = 1;\n
+				soundType = 1;\n}}"
+	)
+]
+
 */
 
-- (void)_handleAlarmSnoozedNotification:(id)notification {
-	%log;
-	%orig();
+- (id)_nextAlarmForFeed:(unsigned)feed withNotifications:(NSArray *)notifications {
+
+	NSLog(@"[DEBUG] Welcome to the _nextAlarmForFeed show, kids! Here's our good guy, %@! Here are our arguments: %u, %@...", sz_alarmsToOverride, feed, notifications);
+
+	if (sz_alarmsToOverride) {
+		NSLog(@"[DEBUG] We've cleared the first hurdle! Let's see what our good guy has to offer...");
+		for(UIConcreteLocalNotification *n in notifications) {
+			NSLog(@"[DEBUG] Ah, we're at %@ with %@ in our great big argument, let's see if it's found...", n, n.userInfo[@"alarmId"]);
+			if ([sz_alarmsToOverride containsObject:n.userInfo[@"alarmId"]]) {
+				NSDateComponents *add = [[[NSDateComponents alloc] init] autorelease];
+				add.second = SZADD_AMOUNT;
+				add.minute = -9; // Default snooze amount
+
+				NSDate *snoozeDate = [[NSCalendar currentCalendar] dateByAddingComponents:add toDate:[n fireDate] options:0];
+				[n setFireDate:snoozeDate];
+				NSLog(@"[DEBUG] We're in luck! Our good guy contained it! Let's use %@ to create %@ and make %@!", add, snoozeDate, n);
+			}
+		}
+
+		NSLog(@"[DEBUG] Out of that craziness. Let's kill off our protagonist, and move on.");
+		sz_alarmsToOverride = nil;
+	}
+
+	NSLog(@"[DEBUG] See ya! We're leaving with %@.", notifications);
+	return %orig(feed, notifications);
 }
 
-
 %end
-
-
-//- (id)initWithTimeInterval:(double)arg1 serviceIdentifier:(id)arg2 target:(id)arg3 selector:(SEL)arg4 userInfo:(id)arg5;

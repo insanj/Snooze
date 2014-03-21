@@ -1,4 +1,3 @@
-
 @interface PCPersistentTimer : NSObject {
 	BOOL _disableSystemWaking;
 	double _fireTime;
@@ -115,6 +114,10 @@
 - (id)timeZone;
 - (int)totalRepeatCount;
 - (id)userInfo;
+@end
+
+@interface NSConcreteNotification : NSNotification
+- (id)initWithName:(id)arg1 object:(id)arg2 userInfo:(id)arg3;
 @end
 
 @interface Alarm : NSObject
