@@ -1,18 +1,16 @@
-Snooze
-=======================
+#Snooze
 
 Configurable snooze times.
 
 
-History
------------------------
+##History
 
 Snooze is a fantastic example of, at least for me, an average tweak's development from idea to iteration to completion. When I first decided to develop Snooze, I assumed it had to begin in the MobileTimer private framework, that's why it wasn't possible to utilities like Flex, and why it didn't show up when I searched for it a few months ago (in a less experienced time). So, I dived in, and found a few great methods in the Alarm and xxxManager classes. Unfortunately, [%log](http://iphonedevwiki.net/index.php/Logos#.25log)'ing all of them wasn't very pretty. Only one was consistantely called:
    `+[Alarm isSnoozeNotification:arg1]`
 
 But still, that sounded good. Here's what it spit out, after I snoozed an alarm:
 
-`+[<Alarm: 0x199679bf8> isSnoozeNotification:<UIConcreteLocalNotification: 0x178134dc0>
+	+[<Alarm: 0x199679bf8> isSnoozeNotification:<UIConcreteLocalNotification: 0x178134dc0>
 	{
 		fire date = Thursday, March 20, 2014 at 10:16:02 PM Eastern Daylight Time,
 		time zone = (null),
@@ -28,52 +26,50 @@ But still, that sounded good. Here's what it spit out, after I snoozed an alarm:
 				revision = 1;
 				soundType = 1;
 		}
-	}
-]`
+	}]
 
 That seemed simple. But it was called more than once, maybe even dozens of times. And comparing all of those times would be exhausting. A simple implementation (reducing the "fire date" by 9, the default snooze time, and increasing it by SZADD_AMOUNT, my test amount) failed on all counts. So, I headed to some decompilations I had lying around for the Clock app, and SpringBoard itself. In a twist, I found this handy method, in a class I'd never even heard of:
 
-	`-[SBClockDataProvider _handleAlarmSnoozedNotification:]`
+	-[SBClockDataProvider _handleAlarmSnoozedNotification:]
 
 The implementation went something like:
 
-`-(void)_handleAlarmSnoozedNotification:(NSConcreteNotification *)notification {
-	...
-	... userInfo = [notification userInfo;]
-	... alarm = [userInfo objectForKey:@"AlarmNotification"];
-	... bulletin = [self _bulletinRequestForSnoozedAlarm:alarm];
-	... timer = [[PCPersistentTimer alloc] init];
-	[timer setFireDate:bulletin.fireDate];
-	...
-}`
+	-(void)_handleAlarmSnoozedNotification:(NSConcreteNotification *)notification {
+		...
+		... userInfo = [notification userInfo;]
+		... alarm = [userInfo objectForKey:@"AlarmNotification"];
+		... bulletin = [self _bulletinRequestForSnoozedAlarm:alarm];
+		... timer = [[PCPersistentTimer alloc] init];
+		[timer setFireDate:bulletin.fireDate];
+		...
+	}
 
 So, I assumed overriding that to swap out the notification argument would work exactly the way I wanted, and it seemed to be the start of the trail. Here's what I logged out:
 
-`-[<SBClockDataProvider: 0x1708710c0> _handleAlarmSnoozedNotification:NSConcreteNotification 0x170a43450
-{
-	name = SBApplicationClockAlarmSnoozedNotification;
-	userInfo = {
-		AlarmNotification = <UIConcreteLocalNotification: 0x17012c620>{
-			fire date = Thursday, March 20, 2014 at 11:17:12 PM Eastern Daylight Time,
-			time zone = (null),
-			repeat interval = 0,
-			repeat count = 0,
-			next fire date = Thursday, March 20, 2014 at 11:17:12 PM Eastern Daylight Time,
-			user info = {
-				alarmId = "9D663886-D567-4DA0-A130-D1B7315FBF19";
-				hour = 23;
-				lastModified = "2014-03-21 03:07:34 +0000";
-				minute = 8;
-				repeatDay = "-1";
-				revision = 1;
-				soundType = 1;
-			}
-		};
-	}
-}
-]`
+	-[<SBClockDataProvider: 0x1708710c0> _handleAlarmSnoozedNotification:NSConcreteNotification 0x170a43450
+	{
+		name = SBApplicationClockAlarmSnoozedNotification;
+		userInfo = {
+			AlarmNotification = <UIConcreteLocalNotification: 0x17012c620>{
+				fire date = Thursday, March 20, 2014 at 11:17:12 PM Eastern Daylight Time,
+				time zone = (null),
+				repeat interval = 0,
+				repeat count = 0,
+				next fire date = Thursday, March 20, 2014 at 11:17:12 PM Eastern Daylight Time,
+				user info = {
+					alarmId = "9D663886-D567-4DA0-A130-D1B7315FBF19";
+					hour = 23;
+					lastModified = "2014-03-21 03:07:34 +0000";
+					minute = 8;
+					repeatDay = "-1";
+					revision = 1;
+					soundType = 1;
+				}
+			};
+		}
+	}]
 
-`   [Snooze] Added 10
+	[Snooze] Added 10
 		to current time of 2014-03-21 03:22:01 +0000,
 
 		to alter NSConcreteNotification 0x178c5a7c0 {
@@ -134,18 +130,19 @@ So, I assumed overriding that to swap out the notification argument would work e
 					}
 				};
 			}
-		}`
+		}
 
 But, that didn't work. It updated the timer for the bulletins (super easy to see on the lock screen), but it had no real effect on the actual timer or alarm. Some minor investigations into the decompilation made me feel as if there was some global "SBLocalNotificationSnoozeIntervalOverride" variable, but I couldn't find more than a single reference to that anywhere. Even in the simple snooze methods. It must've been a private value for actual system alerts. Moving on, I traced this method next:
 
-	`-[SBClockDataProvider _handlePossibleAlarmNotificationUpdate:]`
+	-[SBClockDataProvider _handlePossibleAlarmNotificationUpdate:]
 
 
 Which ended me up in the PCPersistentTimer class, which was part of the sister framework PersistentConnection. Popping some logs from time-dependant PCPersistentTimer -init hook was nice-looking:
 
-	`SpringBoard[30169]: [Snooze] Overriding preset time interval 9.999883 to be personalized 1395372853.630588...`
+	SpringBoard[30169]: [Snooze] Overriding preset time interval 9.999883 to be personalized 1395372853.630588...
 
-`   %hook PCPersistentTimer
+
+	%hook PCPersistentTimer
 
 
 	- (id)initWithTimeInterval:(double)arg1 serviceIdentifier:(id)arg2 target:(id)arg3 selector:(SEL)arg4 userInfo:(id)arg5 {
@@ -161,12 +158,13 @@ Which ended me up in the PCPersistentTimer class, which was part of the sister f
 		}
 	}
 
-   %end`
+	%end
 
 But that had no additional effect on the codebase. Everything operated as it had before, meaning I was simply following the crumb trail *down*, instead of *up*. Without any other choice, I went back to the beautiful SBClockDataProvider, this time for -_publishAlarmsWithScheduledNotifications:
 
-`without anything (set for 11:59, log 8 seconds later)
--[<SBClockDataProvider: 0x17867a500> _publishAlarmsWithScheduledNotifications:(
+	without anything (set for 11:59, log 8 seconds later)
+
+	-[<SBClockDataProvider: 0x17867a500> _publishAlarmsWithScheduledNotifications:(
 		<UIConcreteLocalNotification: 0x170322300>{
 			fire date = Friday, March 21, 2014 at 12:08:08 AM Eastern Daylight Time,
 			time zone = (null),
@@ -183,9 +181,8 @@ But that had no additional effect on the codebase. Everything operated as it had
 				soundType = 1;
 			}
 		}"
-	)
-]
---- last message repeated 1 time ---`
+	)]
+	--- last message repeated 1 time ---
 
 Uh-oh. This was down as well. The "fire date" was identical to the time snoozed. Hm... but inspecting the decompilation led me to a middle-man-looking method:
 	`-[<SBClockDataProvider _nextAlarmForFeed:32 withNotifications]`
@@ -223,7 +220,7 @@ In essence, that translated into:
 It wasn't an override at all! It was just a SnoozeInterval, in the end, and it wanted everything but to be found. Logging all of the -integerForKey's of NSUserDefaults (the universal XML-wrapped quick-and-dirty storage system for iOS, useful for tiny values) made me realize Apple uses it a lot. Like, a whole lot. For tons of different things. I had no idea. Just for fun, I %hook'd the method, with a very simply body:
 
 
-`   %hook NSUserDefaults
+	%hook NSUserDefaults
 
 	- (NSInteger)integerForKey:(NSString *)defaultName {
 		if ([defaultName isEqualToString:@"SBLocalNotificationSnoozeIntervalOverride"]) {
@@ -235,13 +232,13 @@ It wasn't an override at all! It was just a SnoozeInterval, in the end, and it w
 		}
 	}
 
-   %end`
+	%end
 
 And you know what? It worked out. Perfectly. That's the only block of code that mattered. Hundreds of lines of code eliminated. Thousands written. The answer reducible to three.
 
 Just another day in tweak land.
 
-- Julian Weiss
+\- Julian Weiss
 
 ---------------------------------------
 [Creative Commons Attribution-NonCommercial 3.0 United States License](http://creativecommons.org/licenses/by-nc/3.0/us/) as of 2014:
