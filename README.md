@@ -4,7 +4,15 @@ Snooze
 Configurable snooze times.
 
 
-+[<Alarm: 0x199679bf8> isSnoozeNotification:<UIConcreteLocalNotification: 0x178134dc0>
+History
+-----------------------
+
+Snooze is a fantastic example of, at least for me, an average tweak's development from idea to iteration to completion. When I first decided to develop Snooze, I assumed it had to begin in the MobileTimer private framework, that's why it wasn't possible to utilities like Flex, and why it didn't show up when I searched for it a few months ago (in a less experienced time). So, I dived in, and found a few great methods in the Alarm and xxxManager classes. Unfortunately, [%log](http://iphonedevwiki.net/index.php/Logos#.25log)'ing all of them wasn't very pretty. Only one was consistantely called:
+   `+[Alarm isSnoozeNotification:arg1]`
+
+But still, that sounded good. Here's what it spit out, after I snoozed an alarm:
+
+`+[<Alarm: 0x199679bf8> isSnoozeNotification:<UIConcreteLocalNotification: 0x178134dc0>
 	{
 		fire date = Thursday, March 20, 2014 at 10:16:02 PM Eastern Daylight Time,
 		time zone = (null),
@@ -21,53 +29,27 @@ Configurable snooze times.
 				soundType = 1;
 		}
 	}
-]
+]`
 
-void __cdecl -[SBClockDataProvider _handleAlarmSnoozedNotification:](struct SBClockDataProvider *self, SEL a2, id a3)
-{
-	struct SBClockDataProvider *v3; // r10@1
-	void *v4; // r0@1
-	void *v5; // r6@1
-	void *v6; // r5@1
-	void *v7; // r8@1
-	void *v8; // r0@1
-	void *v9; // r6@1
-	int v10; // r1@1
-	int v11; // r11@1
-	void *v12; // r0@1
-	void *v13; // r0@1
-	void *v18; // r4@1
-	void *v21; // r0@1
+That seemed simple. But it was called more than once, maybe even dozens of times. And comparing all of those times would be exhausting. A simple implementation (reducing the "fire date" by 9, the default snooze time, and increasing it by SZADD_AMOUNT, my test amount) failed on all counts. So, I headed to some decompilations I had lying around for the Clock app, and SpringBoard itself. In a twist, I found this handy method, in a class I'd never even heard of:
 
-	v3 = self;
-	v4 = objc_msgSend(a3, "userInfo");
-	v5 = objc_msgSend(v4, "objectForKey:", CFSTR("AlarmNotification"));
-	v6 = objc_msgSend(v3, "_bulletinRequestForSnoozedAlarm:", v5);
-	objc_msgSend(v3->_dataProviderProxy, "addBulletin:forDestinations:", v6, 4);
-	v7 = objc_msgSend(&OBJC_CLASS___PCPersistentTimer, "alloc");
-	v8 = objc_msgSend(v5, "fireDate");
-	v9 = objc_msgSend(v8, "timeIntervalSinceNow");
-	v11 = v10;
-	v12 = objc_msgSend(v6, "publisherBulletinID");
-	v13 = objc_msgSend(
-			v7,
-			"initWithTimeInterval:serviceIdentifier:target:selector:userInfo:",
-			v9,
-			v11,
-			CFSTR("com.apple.mobiletimer"),
-			v3,
-			"_snoozedAlarmRefired:",
-			v12);
-	__asm { VMOV.F64        D16, #1.0 }
-	v18 = v13;
-	__asm { VMOV            R2, R3, D16 }
-	objc_msgSend(v13, "setMinimumEarlyFireProportion:", _R2);
-	v21 = objc_msgSend(&OBJC_CLASS___NSRunLoop, "currentRunLoop");
-	objc_msgSend(v18, "scheduleInRunLoop:", v21);
-	j__objc_msgSend(v18, "release");
-}
+	`-[SBClockDataProvider _handleAlarmSnoozedNotification:]`
 
--[<SBClockDataProvider: 0x1708710c0> _handleAlarmSnoozedNotification:NSConcreteNotification 0x170a43450
+The implementation went something like:
+
+`-(void)_handleAlarmSnoozedNotification:(NSConcreteNotification *)notification {
+	...
+	... userInfo = [notification userInfo;]
+	... alarm = [userInfo objectForKey:@"AlarmNotification"];
+	... bulletin = [self _bulletinRequestForSnoozedAlarm:alarm];
+	... timer = [[PCPersistentTimer alloc] init];
+	[timer setFireDate:bulletin.fireDate];
+	...
+}`
+
+So, I assumed overriding that to swap out the notification argument would work exactly the way I wanted, and it seemed to be the start of the trail. Here's what I logged out:
+
+`-[<SBClockDataProvider: 0x1708710c0> _handleAlarmSnoozedNotification:NSConcreteNotification 0x170a43450
 {
 	name = SBApplicationClockAlarmSnoozedNotification;
 	userInfo = {
@@ -89,9 +71,9 @@ void __cdecl -[SBClockDataProvider _handleAlarmSnoozedNotification:](struct SBCl
 		};
 	}
 }
-]
+]`
 
-[Snooze] Added 10
+`[Snooze] Added 10
 		to current time of 2014-03-21 03:22:01 +0000,
 
 		to alter NSConcreteNotification 0x178c5a7c0 {
@@ -152,20 +134,19 @@ void __cdecl -[SBClockDataProvider _handleAlarmSnoozedNotification:](struct SBCl
 					}
 				};
 			}
-		}
+		}`
 
-void __cdecl -[SBClockDataProvider _handlePossibleAlarmNotificationUpdate:](struct SBClockDataProvider *self, SEL a2, id a3)
-{
-    struct SBClockDataProvider *v3; // r4@1
+But, that didn't work. It updated the timer for the bulletins (super easy to see on the lock screen), but it had no real effect on the actual timer or alarm. Some minor investigations into the decompilation made me feel as if there was some global "SBLocalNotificationSnoozeIntervalOverride" variable, but I couldn't find more than a single reference to that anywhere. Even in the simple snooze methods. It must've been a private value for actual system alerts. Moving on, I traced this method next:
 
-    v3 = self;
-    objc_msgSend(self, "_scheduledNotifications", a3);
-    j__objc_msgSend(v3, "_publishAlarmsWithScheduledNotifications:");
-}
+	`-[SBClockDataProvider _handlePossibleAlarmNotificationUpdate:]`
 
-/* %hook PCPersistentTimer
 
-SpringBoard[30169]: [Snooze] Overriding preset time interval 9.999883 to be personalized 1395372853.630588...
+Which ended me up in the PCPersistentTimer class, which was part of the sister framework PersistentConnection. Popping some logs from time-dependant PCPersistentTimer -init hook was nice-looking:
+
+	`SpringBoard[30169]: [Snooze] Overriding preset time interval 9.999883 to be personalized 1395372853.630588...`
+
+`%hook PCPersistentTimer
+
 
 - (id)initWithTimeInterval:(double)arg1 serviceIdentifier:(id)arg2 target:(id)arg3 selector:(SEL)arg4 userInfo:(id)arg5 {
 	if( sz_overrideInterval != 0.0) {
@@ -180,79 +161,11 @@ SpringBoard[30169]: [Snooze] Overriding preset time interval 9.999883 to be pers
 	}
 }
 
-%end*/
+%end`
 
+But that had no additional effect on the codebase. Everything operated as it had before, meaning I was simply following the crumb trail *down*, instead of *up*. Without any other choice, I went back to the beautiful SBClockDataProvider, this time for -_publishAlarmsWithScheduledNotifications:
 
-/* pre snooze
-
-with already snoozing or something
--[<SBClockDataProvider: 0x17867a500> _publishAlarmsWithScheduledNotifications:(
-		<UIConcreteLocalNotification: 0x170325fa0>{
-			fire date = Thursday, March 20, 2014 at 11:48:02 PM Eastern Daylight Time,
-			time zone = (null),
-			repeat interval = 0,
-			repeat count = 0,
-			next fire date = Thursday, March 20, 2014 at 11:48:02 PM Eastern Daylight Time,
-			user info = {
-				alarmId = "E1F654D9-4957-4D25-8AA9-4FEBFCF9437E"
-				hour = 23;
-				lastModified = "2014-03-21 03:38:07 +0000";
-				minute = 39;
-				repeatDay = "-1";
-				revision = 1;
-				soundType = 1;
-			}
-		}
-	)
-]
-
-without anything
-[<SBClockDataProvider: 0x17867a500> _publishAlarmsWithScheduledNotifications:(
-	)]
-
-
-*/
-
-/* post snooze
-
-with already snoozing or something
--[<SBClockDataProvider: 0x17867a500> _publishAlarmsWithScheduledNotifications:(
-		<UIConcreteLocalNotification: 0x1701302c0>{
-			fire date = Thursday, March 20, 2014 at 11:48:02 PM Eastern Daylight Time
-			time zone = (null)
-			repeat interval = 0
-			repeat count = 0
-			next fire date = Thursday, March 20, 2014 at 11:48:02 PM Eastern Daylight Time,
-			user info = {
-				alarmId = "E1F654D9-4957-4D25-8AA9-4FEBFCF9437E";
-				hour = 23;
-				lastModified = "2014-03-21 03:38:07 +0000";
-				minute = 39;
-				repeatDay = "-1";
-				revision = 1;
-				soundType = 1;
-			}
-		},
-
-		<UIConcreteLocalNotification: 0x17012eb00>{
-			fire date = Thursday, March 20, 2014 at 11:52:19 PM Eastern Daylight Time
-			time zone = (null)
-			repeat interval = 0
-			repeat count = 0
-			next fire date = Thursday, March 20, 2014 at 11:52:19 PM Eastern Daylight Time
-			user info = {
-				alarmId = "33B0B623-4900-4B13-A7D3-53349ABD5614";
-				hour = 23;
-				lastModified = "2014-03-21 03:33:34 +0000";
-				minute = 34;
-				repeatDay = ""-1";
-				revision = 1;soundType = 1;
-			}
-		}
-	)
-]
-
-without anything (set for 11:59, log 8 seconds later)
+`without anything (set for 11:59, log 8 seconds later)
 -[<SBClockDataProvider: 0x17867a500> _publishAlarmsWithScheduledNotifications:(
 		<UIConcreteLocalNotification: 0x170322300>{
 			fire date = Friday, March 21, 2014 at 12:08:08 AM Eastern Daylight Time,
@@ -272,10 +185,63 @@ without anything (set for 11:59, log 8 seconds later)
 		}"
 	)
 ]
---- last message repeated 1 time ---
+--- last message repeated 1 time ---`
 
-*/
+Uh-oh. This was down as well. The "fire date" was identical to the time snoozed. Hm... but inspecting the decompilation led me to a middle-man-looking method:
+	`-[<SBClockDataProvider _nextAlarmForFeed:32 withNotifications]`
 
+Let's see what it prints:
+
+`-[<SBClockDataProvider: 0x170a7efc0> _nextAlarmForFeed:32 withNotifications:(
+		<UIConcreteLocalNotification: 0x1783288e0>{
+			fire date = Friday, March 21, 2014 at 12:16:01 AM Eastern Daylight Time,
+			time zone = (null),
+			repeat interval = 0,
+			repeat count = 0,
+			next fire date = Friday, March 21, 2014 at 12:16:01 AM Eastern Daylight Time,
+			user info = {
+				alarmId = \"E6A01559-F7A0-4A16-B016-CE65AC2EB953\";\n
+				hour = 0;\n
+				lastModified = \"2014-03-21 04:06:55 +0000\";\n
+				minute = 7;
+				repeatDay = "-1";
+				revision = 1;
+				soundType = 1;
+			}
+		}
+	)
+]`
+
+Not bad! Looks like a very similar functionality to our parent %hook, back up there. Rubbing my hands together, I decided to create a global, static array that could hold all the alarmIds, and then, in this method, check to see if, in any of the notifications, there's one of those ids. If so, it would reduce the time by 9 minutes, and add my fake value (10 seconds). But, since this method is called several times, comparing the dates was tough... sometimes they were the same. Next call, though, they'd be already upped by 9 minutes, but they still had the 10 second addition from the previous call! What was happening?! After playing around with a bit too many stringy ideas for this method, I realized I was **still down**.
+
+That's when SBLocalNotificationSnoozeIntervalOverride caught my eye again. It popped up in the stack trace for this method, *upwards*. But how did I miss that? Because it was surrounded by conditionals in the method I had started in. The full, jargony method had this one, serene line, that I underestimated:
+	`_R0 = objc_msgSend(v7, "integerForKey:", CFSTR("SBLocalNotificationSnoozeIntervalOverride"));`
+
+In essence, that translated into:
+	`Make the snooze time additional equal to [[NSUserDefaults standardUserDefaults] integerForKey:SBLocalNotificationSnoozeIntervalOverride]`
+
+It wasn't an override at all! It was just a SnoozeInterval, in the end, and it wanted everything but to be found. Logging all of the -integerForKey's of NSUserDefaults (the universal XML-wrapped quick-and-dirty storage system for iOS, useful for tiny values) made me realize Apple uses it a lot. Like, a whole lot. For tons of different things. I had no idea. Just for fun, I %hook'd the method, with a very simply body:
+
+
+`%hook NSUserDefaults
+
+- (NSInteger)integerForKey:(NSString *)defaultName {
+	if ([defaultName isEqualToString:@"SBLocalNotificationSnoozeIntervalOverride"]) {
+		return SZADD_AMOUNT;
+	}
+
+	else {
+		return %orig();
+	}
+}
+
+%end`
+
+And you know what? It worked out. Perfectly. That's the only block of code that mattered. Hundreds of lines of code eliminated. Thousands written. The answer reducible to three.
+
+Just another day in tweak land.
+
+- Julian Weiss
 
 ---------------------------------------
 [Creative Commons Attribution-NonCommercial 3.0 United States License](http://creativecommons.org/licenses/by-nc/3.0/us/) as of 2014:
