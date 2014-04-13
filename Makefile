@@ -6,10 +6,12 @@ include theos/makefiles/common.mk
 
 TWEAK_NAME = Snooze
 Snooze_FILES = Snooze.xm
-Snooze_FRAMEWORKS = UIKit Foundation
-Snooze_PRIVATE_FRAMEWORKS = MobileTimer PersistentConnection
+Snooze_FRAMEWORKS = UIKit
+Snooze_PRIVATE_FRAMEWORKS = MobileTimer
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
+before-stage::
+	find . -name ".DS_Store" -delete
 internal-after-install::
 	install.exec "killall -9 backboardd"
