@@ -4,7 +4,20 @@
 @property(readonly) NSString *alarmId;
 @end
 
-@interface EditAlarmViewController : UIViewController <UITableViewDataSource, UITableViewDelegate>
+@interface EditAlarmView : UIView{
+    UITableView *_settingsTable;
+    UIDatePicker *_timePicker;
+}
+
+@property(readonly, nonatomic) UIDatePicker *timePicker;
+@property(readonly, nonatomic) UITableView *settingsTable;
+- (id)initWithFrame:(CGRect)arg1;
+
+@end
+
+@interface EditAlarmViewController : UIViewController <UITableViewDataSource, UITableViewDelegate> {
+    EditAlarmView *_editAlarmView;
+}
 
 @property(readonly, nonatomic) Alarm *alarm;
 
@@ -62,5 +75,11 @@
 @interface CenteredCellUITableView : UITableView
 
 @property(nonatomic) CGRect keyboardFrame;
+
+@end
+
+@interface SnoozeAlertViewDelegate : NSObject <UIAlertViewDelegate>
+
+@property(nonatomic, retain) EditAlarmViewController *editAlarmViewController;
 
 @end

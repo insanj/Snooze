@@ -1,6 +1,5 @@
 Package: com.insanj.snooze
 Name: Snooze
-Pre-Depends: firmware (>= 7.0)
 Depends: mobilesubstrate
 Version: 0.1
 Architecture: iphoneos-arm

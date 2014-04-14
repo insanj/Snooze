@@ -1,9 +1,9 @@
 #Snooze
 
-Configurable snooze times.
+Configurable snooze times. Subject of my [JailbreakCon 2014 talk](https://twitter.com/JailbreakCon/status/455097070542548992).
 
 
-##History
+###Story
 
 Snooze is a fantastic example of, at least for me, an average tweak's development from idea to iteration to completion. When I first decided to develop Snooze, I assumed it had to begin in the MobileTimer private framework, that's why it wasn't possible to utilities like Flex, and why it didn't show up when I searched for it a few months ago (in a less experienced time). So, I dived in, and found a few great methods in the Alarm and xxxManager classes. Unfortunately, [%log](http://iphonedevwiki.net/index.php/Logos#.25log)'ing all of them wasn't very pretty. Only one was consistantely called:
    `+[Alarm isSnoozeNotification:arg1]`
@@ -234,11 +234,11 @@ It wasn't an override at all! It was just a SnoozeInterval, in the end, and it w
 
 	%end
 
-And you know what? It worked out. Perfectly. That's the only block of code that mattered. Hundreds of lines of code eliminated. Thousands written. The answer reducible to three.
+And you know what? It worked out. Perfectly. That's the only block of code that mattered. Hundreds of lines of code eliminated. The answer reducible to three.
 
 Just another day in tweak land.
 
-####\- Julian Weiss
+#####\- Julian Weiss
 
 ---------------------------------------
 [Creative Commons Attribution-NonCommercial 3.0 United States License](http://creativecommons.org/licenses/by-nc/3.0/us/) as of 2014:
