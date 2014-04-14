@@ -3,9 +3,9 @@
 Configurable snooze times. Subject of my [JailbreakCon 2014 talk](https://twitter.com/JailbreakCon/status/455097070542548992).
 
 
-###Story
+##Story
 
-Snooze is a fantastic example of, at least for me, an average tweak's development from idea to iteration to completion. When I first decided to develop Snooze, I assumed it had to begin in the MobileTimer private framework, that's why it wasn't possible to utilities like Flex, and why it didn't show up when I searched for it a few months ago (in a less experienced time). So, I dived in, and found a few great methods in the Alarm and xxxManager classes. Unfortunately, [%log](http://iphonedevwiki.net/index.php/Logos#.25log)'ing all of them wasn't very pretty. Only one was consistantely called:
+Snooze is a fantastic example of, at least for me, an average tweak's development from idea to iteration to completion. When I first decided to develop Snooze, I assumed it had to begin in the MobileTimer private framework, that's why it wasn't possible to alter it with utilities like Flex, and why it didn't show up when I cursory-searched a few months ago (in a less experienced time). So, I dived in, and found a few great methods in the Alarm and Alarm/Clock/TimerManager classes. Unfortunately, [%log](http://iphonedevwiki.net/index.php/Logos#.25log)'ing all of them wasn't very pretty. Only one was consistently called:
    `+[Alarm isSnoozeNotification:arg1]`
 
 But still, that sounded good. Here's what it spit out, after I snoozed an alarm:
@@ -28,7 +28,7 @@ But still, that sounded good. Here's what it spit out, after I snoozed an alarm:
 		}
 	}]
 
-That seemed simple. But it was called more than once, maybe even dozens of times. And comparing all of those times would be exhausting. A simple implementation (reducing the "fire date" by 9, the default snooze time, and increasing it by SZADD_AMOUNT, my test amount) failed on all counts. So, I headed to some decompilations I had lying around for the Clock app, and SpringBoard itself. In a twist, I found this handy method, in a class I'd never even heard of:
+That seemed simple. But it was called more than once, maybe even dozens of times. Comparing all of those calls would be exhausting. A simple implementation (reducing the "fire date" by 9, the default snooze time, and increasing it by SZADD_AMOUNT, my test amount) failed on all counts. Although it did alter the notification, that didn't seem to have any effect on the actual performace of an Alarm. So, I peeled through some dumps I had lying around for the Clock app and SpringBoard. In a twist, I found this handy method, in a class I'd never even heard of:
 
 	-[SBClockDataProvider _handleAlarmSnoozedNotification:]
 
@@ -44,7 +44,7 @@ The implementation went something like:
 		...
 	}
 
-So, I assumed overriding that to swap out the notification argument would work exactly the way I wanted, and it seemed to be the start of the trail. Here's what I logged out:
+So, I assumed overriding *this* to swap out the notification argument would be far more effective than the previous logic check, and it seemed to be the start of the call stack. Here's what it logged out:
 
 	-[<SBClockDataProvider: 0x1708710c0> _handleAlarmSnoozedNotification:NSConcreteNotification 0x170a43450
 	{
@@ -69,9 +69,7 @@ So, I assumed overriding that to swap out the notification argument would work e
 		}
 	}]
 
-	[Snooze] Added 10
-		to current time of 2014-03-21 03:22:01 +0000,
-
+	[Snooze] Added 10 to current time of 2014-03-21 03:22:01 +0000,
 		to alter NSConcreteNotification 0x178c5a7c0 {
 				name = SBApplicationClockAlarmSnoozedNotification; userInfo = {
 				AlarmNotification = "<UIConcreteLocalNotification: 0x178134a00>{
@@ -132,12 +130,12 @@ So, I assumed overriding that to swap out the notification argument would work e
 			}
 		}
 
-But, that didn't work. It updated the timer for the bulletins (super easy to see on the lock screen), but it had no real effect on the actual timer or alarm. Some minor investigations into the decompilation made me feel as if there was some global "SBLocalNotificationSnoozeIntervalOverride" variable, but I couldn't find more than a single reference to that anywhere. Even in the simple snooze methods. It must've been a private value for actual system alerts. Moving on, I traced this method next:
+But that didn't work. Hijacking the notification did update the timer for the bulletins (super easy to see on the lock screen), but it had no real effect on the notification fire date, or Alarm. Some minor investigations into that area of the decompilation made me feel hopeful for some global snooze-time key, but there was only this weird "SBLocalNotificationSnoozeIntervalOverride" reference, and I couldn't find more than a single mention of it in the entire SpringBoard. And, because alerts from a few other apps can be "snoozed" (eg Reminders), it was clear it was some system value for other alerts. Moving on, I traced this method next:
 
 	-[SBClockDataProvider _handlePossibleAlarmNotificationUpdate:]
 
 
-Which ended me up in the PCPersistentTimer class, which was part of the sister framework PersistentConnection. Popping some logs from time-dependant PCPersistentTimer -init hook was nice-looking:
+Tracing this had no immediate effect, but it ended me up in the PCPersistentTimer class, which was part of the sister framework PersistentConnection. Popping some logs from time-dependant PCPersistentTimer -init hook was nice looking:
 
 	SpringBoard[30169]: [Snooze] Overriding preset time interval 9.999883 to be personalized 1395372853.630588...
 
@@ -146,7 +144,7 @@ Which ended me up in the PCPersistentTimer class, which was part of the sister f
 
 
 	- (id)initWithTimeInterval:(double)arg1 serviceIdentifier:(id)arg2 target:(id)arg3 selector:(SEL)arg4 userInfo:(id)arg5 {
-		if( sz_overrideInterval != 0.0) {
+		if (sz_overrideInterval != 0.0) {
 			NSLog(@"[Snooze] Overriding preset time interval %f to be personalized %f...", arg1, sz_overrideInterval);
 			double snoozeInterval = sz_overrideInterval;
 			sz_overrideInterval = 0.0;
@@ -160,7 +158,7 @@ Which ended me up in the PCPersistentTimer class, which was part of the sister f
 
 	%end
 
-But that had no additional effect on the codebase. Everything operated as it had before, meaning I was simply following the crumb trail *down*, instead of *up*. Without any other choice, I went back to the beautiful SBClockDataProvider, this time for -_publishAlarmsWithScheduledNotifications:
+But that had no noticeable effect on the codebase. Everything operated as it had before, meaning I was simply following the crumb trail *down*, instead of *up*. Without any other choice, I went back to the mysterious SBClockDataProvider, this time for -_publishAlarmsWithScheduledNotifications:
 
 	without anything (set for 11:59, log 8 seconds later)
 
@@ -209,15 +207,15 @@ Let's see what it prints:
 	)
 ]`
 
-Not bad! Looks like a very similar functionality to our parent %hook, back up there. Rubbing my hands together, I decided to create a global, static array that could hold all the alarmIds, and then, in this method, check to see if, in any of the notifications, there's one of those ids. If so, it would reduce the time by 9 minutes, and add my fake value (10 seconds). But, since this method is called several times, comparing the dates was tough... sometimes they were the same. Next call, though, they'd be already upped by 9 minutes, but they still had the 10 second addition from the previous call! What was happening?! After playing around with a bit too many stringy ideas for this method, I realized I was **still down**.
+Not bad! Looks like a very similar functionality to our original %hook, back up there. Rubbing my hands together, I decided to create a global, static array that could hold all the alarmIds, and then, in this method, check to see if, in any of the notifications, there's one of those ids. If so, it would reduce the time by 9 minutes, and add my fake value (10 seconds). This, however, was no more than a hopeful thought. Since this method is called several times back-to-back, comparing the dates would be tough: sometimes they were the same between calls, something they'd be upped by 9 minutes, sometimes they'd have my 10 second addition applied more than once. What was happening? After playing around with a bit too many stringy ideas for this method, I realized I was *still going down* the call chain.
 
-That's when SBLocalNotificationSnoozeIntervalOverride caught my eye again. It popped up in the stack trace for this method, *upwards*. But how did I miss that? Because it was surrounded by conditionals in the method I had started in. The full, jargony method had this one, serene line, that I underestimated:
+That's when SBLocalNotificationSnoozeIntervalOverride caught my eye again. It popped up in the [stack trace](http://github.com/insanj/Symbolicator) for this method, *upwards*. But how did I miss that? Because it was surrounded by conditionals in the method I had started in, and sounded bizarre. The full, jargony method had this one, serene line, that I underestimated:
 	`_R0 = objc_msgSend(v7, "integerForKey:", CFSTR("SBLocalNotificationSnoozeIntervalOverride"));`
 
 In essence, that translated into:
-	`Make the snooze time additional equal to [[NSUserDefaults standardUserDefaults] integerForKey:SBLocalNotificationSnoozeIntervalOverride]`
+	`If exists, make the snooze time additional equal to [[NSUserDefaults standardUserDefaults] integerForKey:SBLocalNotificationSnoozeIntervalOverride]`
 
-It wasn't an override at all! It was just a SnoozeInterval, in the end, and it wanted everything but to be found. Logging all of the -integerForKey's of NSUserDefaults (the universal XML-wrapped quick-and-dirty storage system for iOS, useful for tiny values) made me realize Apple uses it a lot. Like, a whole lot. For tons of different things. I had no idea. Just for fun, I %hook'd the method, with a very simply body:
+It wasn't an opaque "override" at all— and could be used to alter the snooze interval with hardly any lines of code. Logging all of the -integerForKey's of NSUserDefaults (the universal XML-wrapped quick-and-dirty storage system for iOS, useful for tiny values) made me realize Apple uses it immensely, for tons of different things. Just for fun, I %hook'd the method, with a very simply body:
 
 
 	%hook NSUserDefaults
@@ -234,7 +232,7 @@ It wasn't an override at all! It was just a SnoozeInterval, in the end, and it w
 
 	%end
 
-And you know what? It worked out. Perfectly. That's the only block of code that mattered. Hundreds of lines of code eliminated. The answer reducible to three.
+And you know what? It worked. Perfectly. That's the only block of code that mattered, in the hundreds of lines of code that I had written. The answer was reducible to three.
 
 Just another day in tweak land.
 
