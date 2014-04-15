@@ -1,18 +1,23 @@
 #import <UIKit/UIKit.h>
 
+// Called right before snooze takes effect
 @interface SBApplication
 - (void)systemLocalNotificationAlertShouldSnooze:(id)notif;
 @end
 
-@interface SBClockDataProvider
-- (void)_handleAlarmSnoozedNotification:(id)notification;
+// The snooze alert, with particular Alarm information
+@interface SBSystemLocalNotificationAlert
+@property(readonly, assign, nonatomic) UILocalNotification *localNotification;
 @end
 
+// Alarm object, that holds the unique identifier used for key storing
 @interface Alarm : NSObject
 @property(readonly) NSString *alarmId;
 @end
 
-@interface EditAlarmView : UIView{
+// The modal view that has the timePicker and settings information for
+// Alarms being edited or created
+@interface EditAlarmView : UIView {
     UITableView *_settingsTable;
     UIDatePicker *_timePicker;
 }
@@ -23,6 +28,7 @@
 - (id)initWithFrame:(CGRect)arg1;
 @end
 
+// The ViewController for EditAlarmViews, which handles the tableViews
 @interface EditAlarmViewController : UIViewController <UITableViewDataSource, UITableViewDelegate> {
     EditAlarmView *_editAlarmView;
 }
@@ -50,40 +56,21 @@
 - (id)initWithAlarm:(id)arg1;
 @end
 
-@interface EditAlarmSettingViewController : UIViewController <UITableViewDelegate, UITableViewDataSource>
-
-- (void)textValueChanged:(id)arg1;
-- (void)tableView:(id)arg1 didSelectRowAtIndexPath:(id)arg2;
-- (id)tableView:(id)arg1 cellForRowAtIndexPath:(id)arg2;
-- (unsigned int)maskForRow:(long long)arg1;
-- (long long)tableView:(id)arg1 numberOfRowsInSection:(long long)arg2;
-- (void)ringtonePicker:(id)arg1 selectedMediaItemWithIdentifier:(id)arg2;
-- (void)ringtonePicker:(id)arg1 selectedRingtoneWithIdentifier:(id)arg2;
-- (void)_keyboardWillHide:(id)arg1;
-- (void)_keyboardWillShow:(id)arg1;
-- (void)_dismiss;
-- (void)viewDidUnload;
-- (void)viewDidAppear:(_Bool)arg1;
-- (void)viewWillAppear:(_Bool)arg1;
-- (void)applicationWillSuspend;
-- (void)loadView;
-- (void)addDefaultSongsIfNeeded;
-- (void)dealloc;
-- (id)initWithSetting:(long long)arg1 editController:(id)arg2;
-@end
-
-@interface MoreInfoTableViewCell : UITableViewCell
-@property(retain, nonatomic) NSString *_contentString;
-@end
-
-@interface CenteredCellUITableView : UITableView
-@property(nonatomic) CGRect keyboardFrame;
-@end
-
+// Custom UIAlertViewDelegate used for convenient Snooze Time setting
 @interface SnoozeAlertViewDelegate : NSObject <UIAlertViewDelegate>
 @property(nonatomic, retain) EditAlarmViewController *editAlarmViewController;
 @end
 
+// The subview that's pushed when alerting basic settings (label, repeat, etc)
+@interface CenteredCellUITableView : UITableView
+@property(nonatomic) CGRect keyboardFrame;
+@end
+
+
+// Particular UITableViewCell used in the CenteredCell tableView (used for Labels)
+@interface MoreInfoTableViewCell : UITableViewCell
+@property(retain, nonatomic) NSString *_contentString;
+@end
 
 // The following method isn't called reliably when snoozing, among others (weirdly):
 @interface AlarmManger : NSObject

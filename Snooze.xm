@@ -1,72 +1,43 @@
 #import "Snooze.h"
 #define SNOOZE_KEY(str) [@"SNOOZE-" stringByAppendingString:str]
+#define LOCALIZED_SAVE [[NSBundle mainBundle] localizedStringForKey:@"SAVE" value:@"Save" table:@"Localizable"]
+#define LOCALIZED_CANCEL [[NSBundle mainBundle] localizedStringForKey:@"CANCEL" value:@"Cancel" table:@"Localizable"]
+#define LOCALIZED_MINUTE(min) [NSString stringWithFormat:[[NSBundle mainBundle] localizedStringForKey:@"1_MINUTE" value:@"%@ Minute" table:@"General"], min]
+#define LOCALIZED_MINUTES(min) [NSString stringWithFormat:[[NSBundle mainBundle] localizedStringForKey:@"10_MINUTES" value:@"%@ Minutes" table:@"General"], min]
+#define LOCALIZED_SNOOZETIME [NSString stringWithFormat:@"%@ %@", [[NSBundle mainBundle] localizedStringForKey:@"EDIT_SNOOZE" value:@"Snooze" table:@"Localizable"], [[[NSBundle bundleWithPath:@"/Applications/Preferences.app"] localizedStringForKey:@"TIME" value:@"Time" table:@"Date & Time"] componentsSeparatedByString:@":"][0]]
 
 %hook SBApplication
 
-- (void)systemLocalNotificationAlertShouldSnooze:(id)notif {
-	%log;
-	%orig();
-}
-
-%end
-
-/*
-- (void)_handleAlarmSnoozedNotification:(id)notification {
-	%log;
-	%orig();
-}
-
-%end
-*/
-/*
 // When an Alarm is snoozed, check to see if its alarmId has a user-defined snooze
 // value (in NSUserDefaults), and if so, immediately replace it before handled.
-- (void)handleAlarmFired:(id)arg1 {
-	%log;
-	%orig();
-}
+- (void)systemLocalNotificationAlertShouldSnooze:(id)arg1 {
+	SBSystemLocalNotificationAlert *alert = (SBSystemLocalNotificationAlert *)arg1;
+	if (alert && alert.localNotification.userInfo) {
+		NSString *alarmId = alert.localNotification.userInfo[@"alarmId"];
+		NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+		NSInteger snoozeTime = [defaults integerForKey:SNOOZE_KEY(alarmId)];
+		NSInteger original = [defaults integerForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
+		NSInteger replacement = snoozeTime ? snoozeTime : 540;
 
-- (void)handleNotificationSnoozed:(id)arg1 notifyDelegate:(BOOL)arg2 {
-	%log;
+		NSLog(@"[Snooze] Detected alarm (%@) snoozed, replacing override key (%i) with key %i.", alarmId, (int)original, (int)replacement);
 
-	NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-	NSInteger snoozeTime = [defaults integerForKey:SNOOZE_KEY(self.alarmId)];
-	NSInteger original = [defaults integerForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
-	NSInteger replacement = snoozeTime ? snoozeTime : 540;
+		[defaults setInteger:replacement forKey:@"SBLocalNotificationSnoozeIntervalOverride"];
+	}
 
-	NSLog(@"[Snooze] Detected alarm (%@) snoozed, replacing override key (%i) with key %i.", self, (int)original, (int)replacement);
+	else {
+		NSLog(@"[Snooze] Couldn't effect snooze notification: %@", arg1);
+	}
 
-	[defaults setInteger:replacement forKey:@"SBLocalNotificationSnoozeIntervalOverride"];
-	[[NSNotificationCenter defaultCenter] postNotificationName:@"SBApplicationClockLocalNotificationsUpdated" object:nil userInfo:nil];
 	%orig();
 }
 
 %end
-
-%hook AlarmManager
-
-- (void)handleNotificationSnoozed:(id)arg1 {
-	%log;
-	%orig();
-}
-
-%end*/
-
 
 %hook NSUserDefaults
 
 - (NSInteger)integerForKey:(NSString *)defaultName {
 	NSLog(@"[NSUserDefaults integerForKey:%@] %i", defaultName, (int) %orig);
 	return %orig();
-
-	/*if ([defaultName isEqualToString:@"SBLocalNotificationSnoozeIntervalOverride"]) {
-		NSInteger snoozeInterval = %orig(@"SZSnoozeInterval");
-		return snoozeInterval ? snoozeInterval : %orig(defaultName);
-	}
-
-	else {
-		return %orig();
-	}*/
 }
 
 %end
@@ -82,14 +53,21 @@
 - (UITableViewCell *)tableView:(UITableView *)arg1 cellForRowAtIndexPath:(NSIndexPath *)arg2 {
 	MoreInfoTableViewCell *cell = (MoreInfoTableViewCell *) %orig();
 	if (arg2.row > 3) {
-		cell._contentString = @"Snooze Time";
-		cell.textLabel.text = @"Snooze Time";
+		cell._contentString = cell.textLabel.text = LOCALIZED_SNOOZETIME;
 
-		NSString *snoozeTime = @"9 Minutes";
+		NSString *snoozeTime = LOCALIZED_MINUTES(@"9");
 		NSInteger savedSnoozeTime = [[NSUserDefaults standardUserDefaults] integerForKey:SNOOZE_KEY(self.alarm.alarmId)];
 		if (savedSnoozeTime) {
 			int finalSnoozeTime = (int)(savedSnoozeTime / 60);
-			snoozeTime = [NSString stringWithFormat:@"%i Minute%@", finalSnoozeTime, finalSnoozeTime > 60 ? @"s" : @""];
+			NSString *finalSnoozeString = [NSString stringWithFormat:@"%i", finalSnoozeTime];
+
+			if (finalSnoozeTime > 60) {
+				snoozeTime = LOCALIZED_MINUTES(finalSnoozeString);
+			}
+
+			else {
+				snoozeTime = LOCALIZED_MINUTE(finalSnoozeString);
+			}
 		}
 
 		cell.detailTextLabel.text = snoozeTime;
@@ -106,7 +84,7 @@
 		SnoozeAlertViewDelegate *changeSnoozeDelegate = [[SnoozeAlertViewDelegate alloc] init];
 		changeSnoozeDelegate.editAlarmViewController = self;
 
-		UIAlertView *changeSnoozeAlert = [[UIAlertView alloc] initWithTitle:@"Snooze Time" message:nil delegate:changeSnoozeDelegate cancelButtonTitle:@"Cancel" otherButtonTitles:@"Save", nil];
+		UIAlertView *changeSnoozeAlert = [[UIAlertView alloc] initWithTitle:LOCALIZED_SNOOZETIME message:nil delegate:changeSnoozeDelegate cancelButtonTitle:LOCALIZED_CANCEL otherButtonTitles:LOCALIZED_SAVE, nil];
 		changeSnoozeAlert.alertViewStyle = UIAlertViewStylePlainTextInput;
 
 		UITextField *changeSnoozeField = [changeSnoozeAlert textFieldAtIndex:0];
@@ -129,7 +107,11 @@
 // the Alarm (via NSUserDefaults) that the parent edit Alarm view spawned from.
 - (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex {
 	EditAlarmViewController *controller = self.editAlarmViewController;
-	[[NSUserDefaults standardUserDefaults] setInteger:([[alertView textFieldAtIndex:0].text integerValue] * 60) forKey:SNOOZE_KEY(controller.alarm.alarmId)];
+	NSInteger snoozeTime = ([[alertView textFieldAtIndex:0].text integerValue] * 60);
+	NSString *snoozeKey = SNOOZE_KEY(controller.alarm.alarmId);
+
+	NSLog(@"[Snooze] Setting snooze interval %i for key: %@", (int)snoozeTime, snoozeKey);
+	[[NSUserDefaults standardUserDefaults] setInteger:snoozeTime forKey:snoozeKey];
 
 	EditAlarmView *editAlarmView = MSHookIvar<EditAlarmView *>(controller, "_editAlarmView");
 	UITableView *table = MSHookIvar<UITableView *>(editAlarmView, "_settingsTable");
