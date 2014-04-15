@@ -4,6 +4,7 @@ Depends: mobilesubstrate
 Version: 0.1
 Architecture: iphoneos-arm
 Description: Configurable snooze times.
+ Set your own snooze times when creating Alarms.
 Maintainer: Julian Weiss <insanjmail@insanj.com>
 Author: Julian (insanj) Weiss
 Section: Tweaks

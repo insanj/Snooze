@@ -215,7 +215,7 @@ That's when SBLocalNotificationSnoozeIntervalOverride caught my eye again. It po
 In essence, that translated into:
 	`If exists, make the snooze time additional equal to [[NSUserDefaults standardUserDefaults] integerForKey:SBLocalNotificationSnoozeIntervalOverride]`
 
-It wasn't an opaque "override" at all— and could be used to alter the snooze interval with hardly any lines of code. Logging all of the -integerForKey's of NSUserDefaults (the universal XML-wrapped quick-and-dirty storage system for iOS, useful for tiny values) made me realize Apple uses it immensely, for tons of different things. Just for fun, I %hook'd the method, with a very simply body:
+It wasn't an opaque system override at all— and could be used to alter the snooze interval with hardly any lines of code. Logging all of the -integerForKey's of NSUserDefaults (the universal XML-wrapped quick-and-dirty storage system for iOS, useful for tiny values) made me realize Apple uses it immensely, for tons of different things. Just for fun, I %hook'd the method, with a very simply body:
 
 
 	%hook NSUserDefaults

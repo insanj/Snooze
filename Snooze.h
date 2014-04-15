@@ -1,5 +1,13 @@
 #import <UIKit/UIKit.h>
 
+@interface SBApplication
+- (void)systemLocalNotificationAlertShouldSnooze:(id)notif;
+@end
+
+@interface SBClockDataProvider
+- (void)_handleAlarmSnoozedNotification:(id)notification;
+@end
+
 @interface Alarm : NSObject
 @property(readonly) NSString *alarmId;
 @end
@@ -11,8 +19,8 @@
 
 @property(readonly, nonatomic) UIDatePicker *timePicker;
 @property(readonly, nonatomic) UITableView *settingsTable;
-- (id)initWithFrame:(CGRect)arg1;
 
+- (id)initWithFrame:(CGRect)arg1;
 @end
 
 @interface EditAlarmViewController : UIViewController <UITableViewDataSource, UITableViewDelegate> {
@@ -40,7 +48,6 @@
 - (void)markAsEdited;
 - (void)dealloc;
 - (id)initWithAlarm:(id)arg1;
-
 @end
 
 @interface EditAlarmSettingViewController : UIViewController <UITableViewDelegate, UITableViewDataSource>
@@ -63,23 +70,43 @@
 - (void)addDefaultSongsIfNeeded;
 - (void)dealloc;
 - (id)initWithSetting:(long long)arg1 editController:(id)arg2;
-
 @end
 
 @interface MoreInfoTableViewCell : UITableViewCell
-
 @property(retain, nonatomic) NSString *_contentString;
-
 @end
 
 @interface CenteredCellUITableView : UITableView
-
 @property(nonatomic) CGRect keyboardFrame;
-
 @end
 
 @interface SnoozeAlertViewDelegate : NSObject <UIAlertViewDelegate>
-
 @property(nonatomic, retain) EditAlarmViewController *editAlarmViewController;
-
 @end
+
+
+// The following method isn't called reliably when snoozing, among others (weirdly):
+@interface AlarmManger : NSObject
+- (void)handleNotificationSnoozed:(id)arg1;
+@end
+
+/* A nice custom log function for when there's too much syslog spam to wade through:
+
+static void snoozeLog(NSString *logText) {
+	NSFileManager *manager = [NSFileManager defaultManager];
+	NSString *logPath = @"/var/log/snoozelog";
+	if (![manager fileExistsAtPath:logPath]) {
+		[manager createFileAtPath:logPath contents:[logText dataUsingEncoding:NSASCIIStringEncoding] attributes:nil];
+	}
+
+	else {
+		NSError *logError;
+		NSString *logAppendedText = [NSString stringWithContentsOfFile:logPath encoding:NSASCIIStringEncoding error:&logError];
+		[[logAppendedText stringByAppendingString:@"\nstr"]]
+	}
+
+- (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile encoding:(NSStringEncoding)enc error:(NSError **)error
+
+}
+
+*/

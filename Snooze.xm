@@ -1,24 +1,58 @@
 #import "Snooze.h"
 #define SNOOZE_KEY(str) [@"SNOOZE-" stringByAppendingString:str]
 
-%hook Alarm
+%hook SBApplication
 
-- (void)handleAlarmFired:(id)arg1 {
-	Alarm *firing = (Alarm *) arg1;
-	NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-	NSInteger snoozeTime = [defaults integerForKey:SNOOZE_KEY(firing.alarmId)];
-	NSInteger original = [defaults integerForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
-	NSInteger replacement = snoozeTime ? snoozeTime : 540;
-
-	NSLog(@"[Snooze] Detected alarm (%@) fired, replacing override key (%i) with key %i.", firing, (int)original, (int)replacement);
-
-	[defaults setInteger:replacement forKey:@"SBLocalNotificationSnoozeIntervalOverride"];
+- (void)systemLocalNotificationAlertShouldSnooze:(id)notif {
+	%log;
 	%orig();
 }
 
 %end
 
-// It could be more intelligent to -setIntegerForKey: in SpringBoard...
+/*
+- (void)_handleAlarmSnoozedNotification:(id)notification {
+	%log;
+	%orig();
+}
+
+%end
+*/
+/*
+// When an Alarm is snoozed, check to see if its alarmId has a user-defined snooze
+// value (in NSUserDefaults), and if so, immediately replace it before handled.
+- (void)handleAlarmFired:(id)arg1 {
+	%log;
+	%orig();
+}
+
+- (void)handleNotificationSnoozed:(id)arg1 notifyDelegate:(BOOL)arg2 {
+	%log;
+
+	NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+	NSInteger snoozeTime = [defaults integerForKey:SNOOZE_KEY(self.alarmId)];
+	NSInteger original = [defaults integerForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
+	NSInteger replacement = snoozeTime ? snoozeTime : 540;
+
+	NSLog(@"[Snooze] Detected alarm (%@) snoozed, replacing override key (%i) with key %i.", self, (int)original, (int)replacement);
+
+	[defaults setInteger:replacement forKey:@"SBLocalNotificationSnoozeIntervalOverride"];
+	[[NSNotificationCenter defaultCenter] postNotificationName:@"SBApplicationClockLocalNotificationsUpdated" object:nil userInfo:nil];
+	%orig();
+}
+
+%end
+
+%hook AlarmManager
+
+- (void)handleNotificationSnoozed:(id)arg1 {
+	%log;
+	%orig();
+}
+
+%end*/
+
+
 %hook NSUserDefaults
 
 - (NSInteger)integerForKey:(NSString *)defaultName {
@@ -39,10 +73,12 @@
 
 %hook EditAlarmViewController
 
+// Add a row to the edit (or add) Alarm view (in the Clock app).
 - (NSInteger)tableView:(UITableView *)arg1 numberOfRowsInSection:(NSInteger)arg2 {
-	return %orig() + 1;
+	return arg2 == 0 ? %orig() + 1 : %orig();	// The other section contains "Delete Alarm"
 }
 
+// Create a "Snooze Time" cell in the Alarm edit view.
 - (UITableViewCell *)tableView:(UITableView *)arg1 cellForRowAtIndexPath:(NSIndexPath *)arg2 {
 	MoreInfoTableViewCell *cell = (MoreInfoTableViewCell *) %orig();
 	if (arg2.row > 3) {
@@ -52,7 +88,8 @@
 		NSString *snoozeTime = @"9 Minutes";
 		NSInteger savedSnoozeTime = [[NSUserDefaults standardUserDefaults] integerForKey:SNOOZE_KEY(self.alarm.alarmId)];
 		if (savedSnoozeTime) {
-			snoozeTime = [NSString stringWithFormat:@"%i Minutes", (int)(savedSnoozeTime / 60)];
+			int finalSnoozeTime = (int)(savedSnoozeTime / 60);
+			snoozeTime = [NSString stringWithFormat:@"%i Minute%@", finalSnoozeTime, finalSnoozeTime > 60 ? @"s" : @""];
 		}
 
 		cell.detailTextLabel.text = snoozeTime;
@@ -61,6 +98,7 @@
 	return cell;
 }
 
+// Pop a simple UIAlertView if the "Snooze Time" cell is tapped.
 - (void)tableView:(UITableView *)arg1 didSelectRowAtIndexPath:(NSIndexPath *)arg2 {
 	if (arg2.row > 3) {
 		[arg1 deselectRowAtIndexPath:arg2 animated:YES];
@@ -73,6 +111,7 @@
 
 		UITextField *changeSnoozeField = [changeSnoozeAlert textFieldAtIndex:0];
 		changeSnoozeField.keyboardType = UIKeyboardTypeNumberPad;
+		changeSnoozeField.placeholder = @"e.g. 1, 5, 9, 1337";
 
 		[changeSnoozeAlert show];
 	}
@@ -86,6 +125,8 @@
 
 @implementation SnoozeAlertViewDelegate
 
+// After the "Snooze Time" UIAlertView is dismissed, set its user-entered time to
+// the Alarm (via NSUserDefaults) that the parent edit Alarm view spawned from.
 - (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex {
 	EditAlarmViewController *controller = self.editAlarmViewController;
 	[[NSUserDefaults standardUserDefaults] setInteger:([[alertView textFieldAtIndex:0].text integerValue] * 60) forKey:SNOOZE_KEY(controller.alarm.alarmId)];
