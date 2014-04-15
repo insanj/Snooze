@@ -1,10 +1,56 @@
 #import "Snooze.h"
-#define SNOOZE_KEY(str) [@"SNOOZE-" stringByAppendingString:str]
+
+// Macros for custom plist writing. This can be changed at will, as long as the path
+// is allowed under mobile permissions (thus the req for NSHomeDirectory).
+#define SNOOZE_FOLDER [NSHomeDirectory() stringByAppendingPathComponent:@"/Library/Application Support/Snooze"]
+#define SNOOZE_PLIST [NSHomeDirectory() stringByAppendingPathComponent:@"/Library/Application Support/Snooze/Alarms.plist"]
+
+// Localized versions of every word displayed to the user. Can be ignored, if needed.
 #define LOCALIZED_SAVE [[NSBundle mainBundle] localizedStringForKey:@"SAVE" value:@"Save" table:@"Localizable"]
 #define LOCALIZED_CANCEL [[NSBundle mainBundle] localizedStringForKey:@"CANCEL" value:@"Cancel" table:@"Localizable"]
 #define LOCALIZED_MINUTE(min) [NSString stringWithFormat:[[NSBundle mainBundle] localizedStringForKey:@"1_MINUTE" value:@"%@ Minute" table:@"General"], min]
 #define LOCALIZED_MINUTES(min) [NSString stringWithFormat:[[NSBundle mainBundle] localizedStringForKey:@"10_MINUTES" value:@"%@ Minutes" table:@"General"], min]
 #define LOCALIZED_SNOOZETIME [NSString stringWithFormat:@"%@ %@", [[NSBundle mainBundle] localizedStringForKey:@"EDIT_SNOOZE" value:@"Snooze" table:@"Localizable"], [[[NSBundle bundleWithPath:@"/Applications/Preferences.app"] localizedStringForKey:@"TIME" value:@"Time" table:@"Date & Time"] componentsSeparatedByString:@":"][0]]
+
+// Custom preferences plist writing, in order to prevent NSUserDefaults conflicts
+// based on origin process (also, removes the need for prefixing and such).
+static NSInteger snoozeOverrideForAlarmId(NSString *alarmId) {
+	NSDictionary *alarms = [NSDictionary dictionaryWithContentsOfFile:SNOOZE_PLIST];
+	if (!alarms || !alarms[alarmId]) {
+		NSLog(@"[Snooze] Couldn't find a snooze override for alarmId: %@", alarmId);
+		return 0;
+	}
+
+	return [alarms[alarmId] integerValue];
+}
+
+static void setSnoozeOverrideForAlarmId(NSInteger override, NSString *alarmId) {
+	NSFileManager *manager = [NSFileManager defaultManager];
+	NSString *path = SNOOZE_FOLDER;
+	NSError *error; BOOL success;
+	if (![manager fileExistsAtPath:path]) {
+		success = [manager createDirectoryAtPath:path withIntermediateDirectories:NO attributes:nil error:&error];
+
+		if (error || !success) {
+			NSLog(@"[Snooze] Had trouble writing alarmId (%@) to save path (%@). Success: %@, Error: %@", alarmId, path, success ? @"YES" : @"NO", error);
+		}
+	}
+
+	NSString *writePath = SNOOZE_PLIST;
+	NSDictionary *alarmDict = [NSDictionary dictionaryWithContentsOfFile:writePath];
+	if (!alarmDict) {
+		alarmDict = @{alarmId : @(override)};
+		success = [alarmDict writeToFile:writePath atomically:YES];
+	}
+
+	else {
+		NSMutableDictionary *alarmMutableDict = [NSMutableDictionary dictionaryWithDictionary:alarmDict];
+		[alarmMutableDict setValue:@(override) forKey:alarmId];
+		success = [alarmMutableDict writeToFile:writePath atomically:YES];
+	}
+
+	NSLog(@"[Snooze] %@ wrote snooze alarm dictionary to %@!", success ? @"Successfully" : @"Sort of", writePath);
+}
 
 %hook SBApplication
 
@@ -16,14 +62,13 @@
 	SBSystemLocalNotificationAlert *alert = (SBSystemLocalNotificationAlert *)arg1;
 	if (alert && alert.localNotification.userInfo /* && [Alarm isSnoozeNotification:alert.localNotification] */ ) {
 		NSString *alarmId = alert.localNotification.userInfo[@"alarmId"];
-		NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-		NSInteger snoozeTime = [defaults integerForKey:SNOOZE_KEY(alarmId)];
-		NSInteger original = [defaults integerForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
+		NSInteger snoozeTime = snoozeOverrideForAlarmId(alarmId);
+		NSInteger original = [[NSUserDefaults standardUserDefaults] integerForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
 		NSInteger replacement = snoozeTime ? snoozeTime : 540;
 
 		NSLog(@"[Snooze] Detected alarm (%@) snoozed, replacing override key (%i) with key %i.", alarmId, (int)original, (int)replacement);
 
-		[defaults setInteger:replacement forKey:@"SBLocalNotificationSnoozeIntervalOverride"];
+		[[NSUserDefaults standardUserDefaults] setInteger:replacement forKey:@"SBLocalNotificationSnoozeIntervalOverride"];
 	}
 
 	else {
@@ -60,7 +105,7 @@
 		cell._contentString = cell.textLabel.text = LOCALIZED_SNOOZETIME;
 
 		NSString *snoozeTime = LOCALIZED_MINUTES(@"9");
-		NSInteger savedSnoozeTime = [[NSUserDefaults standardUserDefaults] integerForKey:SNOOZE_KEY(self.alarm.alarmId)];
+		NSInteger savedSnoozeTime = snoozeOverrideForAlarmId(self.alarm.alarmId);
 		if (savedSnoozeTime) {
 			int finalSnoozeTime = (int)(savedSnoozeTime / 60);
 			NSString *finalSnoozeString = [NSString stringWithFormat:@"%i", finalSnoozeTime];
@@ -116,9 +161,9 @@
 	NSString *snoozeText = [alertView textFieldAtIndex:0].text;
 	NSInteger snoozeTime = [snoozeText integerValue] * 60;
 	if (snoozeTime) {
-		NSString *snoozeKey = SNOOZE_KEY(controller.alarm.alarmId);
+		NSString *snoozeKey = controller.alarm.alarmId;
 		NSLog(@"[Snooze] Setting snooze interval %i for key: %@", (int)snoozeTime, snoozeKey);
-		[[NSUserDefaults standardUserDefaults] setInteger:snoozeTime forKey:snoozeKey];
+		setSnoozeOverrideForAlarmId(snoozeTime, snoozeKey);
 	}
 
 	else {
