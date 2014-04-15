@@ -11,8 +11,10 @@
 // When an Alarm is snoozed, check to see if its alarmId has a user-defined snooze
 // value (in NSUserDefaults), and if so, immediately replace it before handled.
 - (void)systemLocalNotificationAlertShouldSnooze:(id)arg1 {
+	%log;
+
 	SBSystemLocalNotificationAlert *alert = (SBSystemLocalNotificationAlert *)arg1;
-	if (alert && alert.localNotification.userInfo) {
+	if (alert && alert.localNotification.userInfo /* && [Alarm isSnoozeNotification:alert.localNotification] */ ) {
 		NSString *alarmId = alert.localNotification.userInfo[@"alarmId"];
 		NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
 		NSInteger snoozeTime = [defaults integerForKey:SNOOZE_KEY(alarmId)];
@@ -46,11 +48,13 @@
 
 // Add a row to the edit (or add) Alarm view (in the Clock app).
 - (NSInteger)tableView:(UITableView *)arg1 numberOfRowsInSection:(NSInteger)arg2 {
+	NSLog(@"[EditAlarmViewController -tableView:%@ numberOfRuowsInSection:%i]", arg1, (int)arg2);
 	return arg2 == 0 ? %orig() + 1 : %orig();	// The other section contains "Delete Alarm"
 }
 
 // Create a "Snooze Time" cell in the Alarm edit view.
 - (UITableViewCell *)tableView:(UITableView *)arg1 cellForRowAtIndexPath:(NSIndexPath *)arg2 {
+	%log;
 	MoreInfoTableViewCell *cell = (MoreInfoTableViewCell *) %orig();
 	if (arg2.row > 3) {
 		cell._contentString = cell.textLabel.text = LOCALIZED_SNOOZETIME;
@@ -78,6 +82,7 @@
 
 // Pop a simple UIAlertView if the "Snooze Time" cell is tapped.
 - (void)tableView:(UITableView *)arg1 didSelectRowAtIndexPath:(NSIndexPath *)arg2 {
+	%log;
 	if (arg2.row > 3) {
 		[arg1 deselectRowAtIndexPath:arg2 animated:YES];
 
@@ -92,6 +97,7 @@
 		changeSnoozeField.placeholder = @"e.g. 1, 5, 9, 1337";
 
 		[changeSnoozeAlert show];
+		[changeSnoozeAlert release];
 	}
 
 	else {
@@ -107,11 +113,17 @@
 // the Alarm (via NSUserDefaults) that the parent edit Alarm view spawned from.
 - (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex {
 	EditAlarmViewController *controller = self.editAlarmViewController;
-	NSInteger snoozeTime = ([[alertView textFieldAtIndex:0].text integerValue] * 60);
-	NSString *snoozeKey = SNOOZE_KEY(controller.alarm.alarmId);
+	NSString *snoozeText = [alertView textFieldAtIndex:0].text;
+	NSInteger snoozeTime = [snoozeText integerValue] * 60;
+	if (snoozeTime) {
+		NSString *snoozeKey = SNOOZE_KEY(controller.alarm.alarmId);
+		NSLog(@"[Snooze] Setting snooze interval %i for key: %@", (int)snoozeTime, snoozeKey);
+		[[NSUserDefaults standardUserDefaults] setInteger:snoozeTime forKey:snoozeKey];
+	}
 
-	NSLog(@"[Snooze] Setting snooze interval %i for key: %@", (int)snoozeTime, snoozeKey);
-	[[NSUserDefaults standardUserDefaults] setInteger:snoozeTime forKey:snoozeKey];
+	else {
+		NSLog(@"[Snooze] Couldn't assign snooze interval because %@ is not a valid integer.", snoozeText);
+	}
 
 	EditAlarmView *editAlarmView = MSHookIvar<EditAlarmView *>(controller, "_editAlarmView");
 	UITableView *table = MSHookIvar<UITableView *>(editAlarmView, "_settingsTable");

@@ -13,6 +13,7 @@
 // Alarm object, that holds the unique identifier used for key storing
 @interface Alarm : NSObject
 @property(readonly) NSString *alarmId;
++ (BOOL)isSnoozeNotification:(id)arg1;
 @end
 
 // The modal view that has the timePicker and settings information for
