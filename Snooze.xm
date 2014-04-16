@@ -52,23 +52,33 @@ static void setSnoozeOverrideForAlarmId(NSInteger override, NSString *alarmId) {
 	NSLog(@"[Snooze] %@ wrote snooze alarm dictionary to %@!", success ? @"Successfully" : @"Sort of", writePath);
 }
 
+
+static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
+	NSMutableDictionary *alarms = [NSMutableDictionary dictionaryWithDictionary:[NSDictionary dictionaryWithContentsOfFile:SNOOZE_PLIST]];
+	if (!alarms) {
+		return;
+	}
+
+	[alarms removeObjectForKey:alarmId];
+	BOOL success = [alarms writeToFile:SNOOZE_PLIST atomically:YES];
+	NSLog(@"[Snooze] %@ removed %@ from snooze alarm dictionary", success ? @"Successfully" : @"Sort of", alarmId);
+}
+
 %hook SBApplication
 
 // When an Alarm is snoozed, check to see if its alarmId has a user-defined snooze
 // value (in NSUserDefaults), and if so, immediately replace it before handled.
 - (void)systemLocalNotificationAlertShouldSnooze:(id)arg1 {
-	%log;
-
+	NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
 	SBSystemLocalNotificationAlert *alert = (SBSystemLocalNotificationAlert *)arg1;
 	if (alert && alert.localNotification.userInfo /* && [Alarm isSnoozeNotification:alert.localNotification] */ ) {
 		NSString *alarmId = alert.localNotification.userInfo[@"alarmId"];
 		NSInteger snoozeTime = snoozeOverrideForAlarmId(alarmId);
-		NSInteger original = [[NSUserDefaults standardUserDefaults] integerForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
-		NSInteger replacement = snoozeTime ? snoozeTime : 540;
+		NSInteger original = [defaults integerForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
 
-		NSLog(@"[Snooze] Detected alarm (%@) snoozed, replacing override key (%i) with key %i.", alarmId, (int)original, (int)replacement);
+		NSLog(@"[Snooze] Detected alarm (%@) snoozed, replacing override key (%i) with key %i.", alarmId, (int)original, (int)snoozeTime);
 
-		[[NSUserDefaults standardUserDefaults] setInteger:replacement forKey:@"SBLocalNotificationSnoozeIntervalOverride"];
+		[defaults setInteger:snoozeTime forKey:@"SBLocalNotificationSnoozeIntervalOverride"];
 	}
 
 	else {
@@ -76,6 +86,11 @@ static void setSnoozeOverrideForAlarmId(NSInteger override, NSString *alarmId) {
 	}
 
 	%orig();
+
+	// Although I hoped the below comment was true, it appears this isn't a fix...
+	// If this remains unremoved, a really weird issue where all alarms become
+	// midnight and unremovable/unturnoffable occurs. Don't ask me why...
+	[defaults removeObjectForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
 }
 
 %end
@@ -93,13 +108,11 @@ static void setSnoozeOverrideForAlarmId(NSInteger override, NSString *alarmId) {
 
 // Add a row to the edit (or add) Alarm view (in the Clock app).
 - (NSInteger)tableView:(UITableView *)arg1 numberOfRowsInSection:(NSInteger)arg2 {
-	NSLog(@"[EditAlarmViewController -tableView:%@ numberOfRuowsInSection:%i]", arg1, (int)arg2);
 	return arg2 == 0 ? %orig() + 1 : %orig();	// The other section contains "Delete Alarm"
 }
 
 // Create a "Snooze Time" cell in the Alarm edit view.
 - (UITableViewCell *)tableView:(UITableView *)arg1 cellForRowAtIndexPath:(NSIndexPath *)arg2 {
-	%log;
 	MoreInfoTableViewCell *cell = (MoreInfoTableViewCell *) %orig();
 	if (arg2.row > 3) {
 		cell._contentString = cell.textLabel.text = LOCALIZED_SNOOZETIME;
@@ -127,7 +140,6 @@ static void setSnoozeOverrideForAlarmId(NSInteger override, NSString *alarmId) {
 
 // Pop a simple UIAlertView if the "Snooze Time" cell is tapped.
 - (void)tableView:(UITableView *)arg1 didSelectRowAtIndexPath:(NSIndexPath *)arg2 {
-	%log;
 	if (arg2.row > 3) {
 		[arg1 deselectRowAtIndexPath:arg2 animated:YES];
 
@@ -148,6 +160,33 @@ static void setSnoozeOverrideForAlarmId(NSInteger override, NSString *alarmId) {
 	else {
 		%orig();
 	}
+}
+
+%end
+
+%hook AlarmViewController
+
+// Clean up preferences if Alarm is removed (only case when it should be!)
+- (void)tableView:(UITableView *)arg1 commitEditingStyle:(UITableViewCellEditingStyle)arg2 forRowAtIndexPath:(NSIndexPath *)arg3 {
+	if (arg2 == UITableViewCellEditingStyleDelete) {
+		// For some reason, this ivar is only set after the user has somehow edited
+		// an Alarm while the current MobileTimer instance was active. So, we must
+		// fake it in case this hasn't happened yet.
+		Alarm *editedAlarm = MSHookIvar<Alarm *>(self, "_alarmToEdit");
+		[self alarmDidUpdate:nil];
+		if (editedAlarm) {
+			NSLog(@"[Snooze] Detected deletion of alarm cell, time for easy plist cleaning...");
+			removeSnoozeOverrideForAlarmId(editedAlarm.alarmId);
+		}
+
+		else {
+			editedAlarm = [[AlarmManager sharedManager] lastModified];
+			NSLog(@"[Snooze] Detected deletion of alarm cell, learned that %@ should be cleaned...", editedAlarm);
+			removeSnoozeOverrideForAlarmId(editedAlarm.alarmId);
+		}
+	}
+
+	%orig();
 }
 
 %end

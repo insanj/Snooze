@@ -74,9 +74,38 @@
 @end
 
 // The following method isn't called reliably when snoozing, among others (weirdly):
-@interface AlarmManger : NSObject
+@interface AlarmManager : NSObject
++ (id)sharedManager;
+- (void)loadAlarms;
 - (void)handleNotificationSnoozed:(id)arg1;
+- (void)removeAlarm:(id)arg1;
+- (id)lastModified;
 @end
+
+@interface AlarmViewController : UITableViewController  {
+    Alarm *_alarmToEdit;
+}
+
+- (void)didEditAlarm:(id)arg1;
+- (void)alarmDidUpdate:(id)arg1;
+- (id)tableView:(id)arg1 cellForRowAtIndexPath:(id)arg2;
+- (void)tableView:(id)arg1 commitEditingStyle:(long long)arg2 forRowAtIndexPath:(id)arg3;
+
+// From protocol: EditAlarmViewControllerDelegate
+- (void)didDeleteAlarm:(Alarm *)arg1;
+@end
+
+@protocol AlarmActiveDelegate
+- (void)activeChangedForAlarm:(Alarm *)arg1 active:(_Bool)arg2;
+@end
+
+
+@interface AlarmTableViewCell : UITableViewCell {
+    id <AlarmActiveDelegate> _alarmActiveDelegate;
+}
+@end
+
+
 
 /* A nice custom log function for when there's too much syslog spam to wade through:
 
