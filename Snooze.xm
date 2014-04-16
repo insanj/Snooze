@@ -87,19 +87,7 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 
 	%orig();
 
-	// Although I hoped the below comment was true, it appears this isn't a fix...
-	// If this remains unremoved, a really weird issue where all alarms become
-	// midnight and unremovable/unturnoffable occurs. Don't ask me why...
 	[defaults removeObjectForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
-}
-
-%end
-
-%hook NSUserDefaults
-
-- (NSInteger)integerForKey:(NSString *)defaultName {
-	NSLog(@"[NSUserDefaults integerForKey:%@] %i", defaultName, (int) %orig);
-	return %orig();
 }
 
 %end
@@ -115,15 +103,15 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 - (UITableViewCell *)tableView:(UITableView *)arg1 cellForRowAtIndexPath:(NSIndexPath *)arg2 {
 	MoreInfoTableViewCell *cell = (MoreInfoTableViewCell *) %orig();
 	if (arg2.row > 3) {
-		cell._contentString = cell.textLabel.text = LOCALIZED_SNOOZETIME;
+		cell.textLabel.text = LOCALIZED_SNOOZETIME;
 
 		NSString *snoozeTime = LOCALIZED_MINUTES(@"9");
 		NSInteger savedSnoozeTime = snoozeOverrideForAlarmId(self.alarm.alarmId);
 		if (savedSnoozeTime) {
-			int finalSnoozeTime = (int)(savedSnoozeTime / 60);
-			NSString *finalSnoozeString = [NSString stringWithFormat:@"%i", finalSnoozeTime];
+			CGFloat finalSnoozeTime = (savedSnoozeTime / 60.0);
+			NSString *finalSnoozeString = [NSString stringWithFormat:@"%.01f", finalSnoozeTime];
 
-			if (finalSnoozeTime > 60) {
+			if (finalSnoozeTime != 1.0) {
 				snoozeTime = LOCALIZED_MINUTES(finalSnoozeString);
 			}
 
@@ -144,14 +132,15 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 		[arg1 deselectRowAtIndexPath:arg2 animated:YES];
 
 		SnoozeAlertViewDelegate *changeSnoozeDelegate = [[SnoozeAlertViewDelegate alloc] init];
-		changeSnoozeDelegate.editAlarmViewController = self;
+		changeSnoozeDelegate.textLabel = [arg1 cellForRowAtIndexPath:arg2].detailTextLabel;
+		changeSnoozeDelegate.alarmId = self.alarm.alarmId;
 
 		UIAlertView *changeSnoozeAlert = [[UIAlertView alloc] initWithTitle:LOCALIZED_SNOOZETIME message:nil delegate:changeSnoozeDelegate cancelButtonTitle:LOCALIZED_CANCEL otherButtonTitles:LOCALIZED_SAVE, nil];
 		changeSnoozeAlert.alertViewStyle = UIAlertViewStylePlainTextInput;
 
 		UITextField *changeSnoozeField = [changeSnoozeAlert textFieldAtIndex:0];
 		changeSnoozeField.keyboardType = UIKeyboardTypeDecimalPad;
-		changeSnoozeField.placeholder = @"e.g. 1, 5, 9, 1337";
+		changeSnoozeField.placeholder = @"e.g. 0.5, 1, 5, 9, 1337";
 
 		[changeSnoozeAlert show];
 		[changeSnoozeAlert release];
@@ -193,22 +182,28 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 // After the "Snooze Time" UIAlertView is dismissed, set its user-entered time to
 // the Alarm (via NSUserDefaults) that the parent edit Alarm view spawned from.
 - (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex {
-	EditAlarmViewController *controller = self.editAlarmViewController;
-	NSString *snoozeText = [alertView textFieldAtIndex:0].text;
-	NSInteger snoozeTime = [snoozeText integerValue] * 60;
-	if (snoozeTime) {
-		NSString *snoozeKey = controller.alarm.alarmId;
-		NSLog(@"[Snooze] Setting snooze interval %i for key: %@", (int)snoozeTime, snoozeKey);
-		setSnoozeOverrideForAlarmId(snoozeTime, snoozeKey);
-	}
+	if (buttonIndex != [alertView cancelButtonIndex]) {
+		NSString *alertViewText = [alertView textFieldAtIndex:0].text;
+		CGFloat snoozeTime = [alertViewText floatValue] * 60.0;
+		if (snoozeTime) {
+			NSString *snoozeKey = self.alarmId;
+			NSLog(@"[Snooze] Setting snooze interval %f for key: %@", snoozeTime, snoozeKey);
+			setSnoozeOverrideForAlarmId((int)snoozeTime, snoozeKey);
 
-	else {
-		NSLog(@"[Snooze] Couldn't assign snooze interval because %@ is not a valid integer.", snoozeText);
-	}
+			NSString *snoozeString = [NSString stringWithFormat:@"%.01f", snoozeTime / 60];
+			self.textLabel.text = LOCALIZED_MINUTES(snoozeString);
+		}
 
-//	EditAlarmView *editAlarmView = MSHookIvar<EditAlarmView *>(controller, "_editAlarmView");
-//	UITableView *table = MSHookIvar<UITableView *>(editAlarmView, "_settingsTable");
-//	[table reloadData];
+		else {
+			NSLog(@"[Snooze] Couldn't assign snooze interval because %@ is not a valid integer.", alertViewText);
+		}
+
+		// If -reloadData is called, a really weird issue where all alarms become midnight
+		// and are frequently unremovable/unturnoffable occurs. Don't ask me why..
+		//  EditAlarmView *editAlarmView = MSHookIvar<EditAlarmView *>(controller, "_editAlarmView");
+		//  UITableView *table = MSHookIvar<UITableView *>(editAlarmView, "_settingsTable");
+		//  [table reloadData];
+	}
 }
 
 @end

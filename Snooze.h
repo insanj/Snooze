@@ -59,7 +59,8 @@
 
 // Custom UIAlertViewDelegate used for convenient Snooze Time setting
 @interface SnoozeAlertViewDelegate : NSObject <UIAlertViewDelegate>
-@property(nonatomic, retain) EditAlarmViewController *editAlarmViewController;
+@property(nonatomic, retain) NSString *alarmId;
+@property(nonatomic, retain) UILabel *textLabel;
 @end
 
 // The subview that's pushed when alerting basic settings (label, repeat, etc)
