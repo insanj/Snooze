@@ -90,6 +90,7 @@
 - (void)alarmDidUpdate:(id)arg1;
 - (id)tableView:(id)arg1 cellForRowAtIndexPath:(id)arg2;
 - (void)tableView:(id)arg1 commitEditingStyle:(long long)arg2 forRowAtIndexPath:(id)arg3;
+- (void)reloadState;
 
 // From protocol: EditAlarmViewControllerDelegate
 - (void)didDeleteAlarm:(Alarm *)arg1;

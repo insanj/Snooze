@@ -150,7 +150,7 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 		changeSnoozeAlert.alertViewStyle = UIAlertViewStylePlainTextInput;
 
 		UITextField *changeSnoozeField = [changeSnoozeAlert textFieldAtIndex:0];
-		changeSnoozeField.keyboardType = UIKeyboardTypeNumberPad;
+		changeSnoozeField.keyboardType = UIKeyboardTypeDecimalPad;
 		changeSnoozeField.placeholder = @"e.g. 1, 5, 9, 1337";
 
 		[changeSnoozeAlert show];
@@ -170,19 +170,16 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 - (void)tableView:(UITableView *)arg1 commitEditingStyle:(UITableViewCellEditingStyle)arg2 forRowAtIndexPath:(NSIndexPath *)arg3 {
 	if (arg2 == UITableViewCellEditingStyleDelete) {
 		// For some reason, this ivar is only set after the user has somehow edited
-		// an Alarm while the current MobileTimer instance was active. So, we must
-		// fake it in case this hasn't happened yet.
+		// an Alarm while the current MobileTimer instance was active.
 		Alarm *editedAlarm = MSHookIvar<Alarm *>(self, "_alarmToEdit");
-		[self alarmDidUpdate:nil];
+
 		if (editedAlarm) {
 			NSLog(@"[Snooze] Detected deletion of alarm cell, time for easy plist cleaning...");
 			removeSnoozeOverrideForAlarmId(editedAlarm.alarmId);
 		}
 
 		else {
-			editedAlarm = [[AlarmManager sharedManager] lastModified];
-			NSLog(@"[Snooze] Detected deletion of alarm cell, learned that %@ should be cleaned...", editedAlarm);
-			removeSnoozeOverrideForAlarmId(editedAlarm.alarmId);
+			NSLog(@"[Snooze] Detected deletion of alarm cell, but there's nothing we can do...");
 		}
 	}
 
@@ -209,9 +206,9 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 		NSLog(@"[Snooze] Couldn't assign snooze interval because %@ is not a valid integer.", snoozeText);
 	}
 
-	EditAlarmView *editAlarmView = MSHookIvar<EditAlarmView *>(controller, "_editAlarmView");
-	UITableView *table = MSHookIvar<UITableView *>(editAlarmView, "_settingsTable");
-	[table reloadData];
+//	EditAlarmView *editAlarmView = MSHookIvar<EditAlarmView *>(controller, "_editAlarmView");
+//	UITableView *table = MSHookIvar<UITableView *>(editAlarmView, "_settingsTable");
+//	[table reloadData];
 }
 
 @end
