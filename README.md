@@ -1,6 +1,6 @@
 #Snooze
 
-Configurable snooze times. Subject of my [JailbreakCon 2014 talk](https://twitter.com/JailbreakCon/status/455097070542548992).
+Configurable snooze times. Subject of my [JailbreakCon 2014 talk](https://www.youtube.com/watch?v=ITnt15K7JvQ).
 
 
 ##Story

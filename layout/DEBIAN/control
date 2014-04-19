@@ -1,10 +1,11 @@
 Package: com.insanj.snooze
 Name: Snooze
 Depends: mobilesubstrate
-Version: 0.1
+Version: 0.2
 Architecture: iphoneos-arm
 Description: Configurable snooze times.
  Set your own snooze times when creating Alarms.
 Maintainer: Julian Weiss <insanjmail@insanj.com>
 Author: Julian (insanj) Weiss
 Section: Tweaks
+Icon: file:///Library/Application Support/Snooze/icon@2x.png

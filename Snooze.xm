@@ -102,10 +102,10 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 // Create a "Snooze Time" cell in the Alarm edit view.
 - (UITableViewCell *)tableView:(UITableView *)arg1 cellForRowAtIndexPath:(NSIndexPath *)arg2 {
 	MoreInfoTableViewCell *cell = (MoreInfoTableViewCell *) %orig();
-	if (arg2.row > 3) {
+	if (arg2.row == [self tableView:arg1 numberOfRowsInSection:arg2.section]-1) {
 		cell.textLabel.text = LOCALIZED_SNOOZETIME;
 
-		NSString *snoozeTime = LOCALIZED_MINUTES(@"9");
+		NSString *snoozeTime = LOCALIZED_MINUTES(@"9.0");
 		NSInteger savedSnoozeTime = snoozeOverrideForAlarmId(self.alarm.alarmId);
 		if (savedSnoozeTime) {
 			CGFloat finalSnoozeTime = (savedSnoozeTime / 60.0);
@@ -128,7 +128,7 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 
 // Pop a simple UIAlertView if the "Snooze Time" cell is tapped.
 - (void)tableView:(UITableView *)arg1 didSelectRowAtIndexPath:(NSIndexPath *)arg2 {
-	if (arg2.row > 3) {
+	if (arg2.row == [self tableView:arg1 numberOfRowsInSection:arg2.section]-1) {
 		[arg1 deselectRowAtIndexPath:arg2 animated:YES];
 
 		SnoozeAlertViewDelegate *changeSnoozeDelegate = [[SnoozeAlertViewDelegate alloc] init];
