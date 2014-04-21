@@ -57,6 +57,11 @@
 - (id)initWithAlarm:(id)arg1;
 @end
 
+// Sshh...
+@interface EditAlarmViewController (Snooze)
+- (void)snooze_textFieldDidChange:(UITextField *)textField;
+@end
+
 // Custom UIAlertViewDelegate used for convenient Snooze Time setting
 @interface SnoozeAlertViewDelegate : NSObject <UIAlertViewDelegate>
 @property(nonatomic, retain) NSString *alarmId;

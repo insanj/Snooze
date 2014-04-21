@@ -1,6 +1,6 @@
 #Snooze
 
-Configurable snooze times. Subject of my [JailbreakCon 2014 talk](https://www.youtube.com/watch?v=ITnt15K7JvQ).
+Configurable snooze times. Supports all devices running iOS 6 through 7. Subject of my [JailbreakCon 2014 talk](https://www.youtube.com/watch?v=ITnt15K7JvQ).
 
 
 ##Story

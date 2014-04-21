@@ -140,14 +140,54 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 
 		UITextField *changeSnoozeField = [changeSnoozeAlert textFieldAtIndex:0];
 		changeSnoozeField.keyboardType = UIKeyboardTypeDecimalPad;
-		changeSnoozeField.placeholder = @"e.g. 0.5, 1, 5, 9, 1337";
+		changeSnoozeField.placeholder = @"e.g. 0.5, 1, 5, 9, 1337 (minutes)";
+		[changeSnoozeField addTarget:self action:@selector(snooze_textFieldDidChange:) forControlEvents:UIControlEventEditingChanged];
 
 		[changeSnoozeAlert show];
 		[changeSnoozeAlert release];
+
 	}
 
 	else {
 		%orig();
+	}
+}
+
+%new - (void)snooze_textFieldDidChange:(UITextField *)textField {
+	UIView *deprivedView = [textField viewWithTag:9001];
+    if ([textField.text floatValue] > 9000.0) {
+		if (!deprivedView) {
+			UIImage *deprivedImage = [UIImage imageWithContentsOfFile:@"/Library/Application Support/Snooze/deprivation@2x.png"];
+
+			CGRect inset = textField.frame;
+			inset.size.width = 20.0;
+			inset.size.height -= 5.0;
+			inset.origin.x = textField.frame.size.width - inset.size.width - 2.5;
+			inset.origin.y += 2.5;
+
+			UIImageView *deprivedImageView = [[UIImageView alloc] initWithFrame:inset];
+			deprivedImageView.image = deprivedImage;
+			deprivedImageView.contentMode = UIViewContentModeScaleAspectFill;
+			deprivedImageView.tag = 9001;
+
+			[textField addSubview:deprivedImageView];
+		}
+
+		// CGRect textRect = [textField.text boundingRectWithSize:textField.frame.size options:NSStringDrawingUsesFontLeading attributes:@{ NSFontAttributeName : textField.font } context:nil];
+		// inset.origin.x = textRect.size.width + 10.0;
+
+		if (textField.text.length > 27) {
+			deprivedView.alpha = 0.5;
+		}
+
+		else {
+			deprivedView.alpha = 1.0;
+		}
+    }
+
+    else if (deprivedView) {
+		[deprivedView removeFromSuperview];
+		deprivedView = nil;
 	}
 }
 
