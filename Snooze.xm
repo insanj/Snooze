@@ -1,5 +1,9 @@
 #import "Snooze.h"
 
+/*****************************************************************************************/
+/********************************* Compatibility Macros **********************************/
+/*****************************************************************************************/
+
 // Macros for custom plist writing. This can be changed at will, as long as the path
 // is allowed under mobile permissions (thus the req for NSHomeDirectory).
 #define SNOOZE_FOLDER [NSHomeDirectory() stringByAppendingPathComponent:@"/Library/Application Support/Snooze"]
@@ -11,6 +15,14 @@
 #define LOCALIZED_MINUTE(min) [NSString stringWithFormat:[[NSBundle mainBundle] localizedStringForKey:@"1_MINUTE" value:@"%@ Minute" table:@"General"], min]
 #define LOCALIZED_MINUTES(min) [NSString stringWithFormat:[[NSBundle mainBundle] localizedStringForKey:@"10_MINUTES" value:@"%@ Minutes" table:@"General"], min]
 #define LOCALIZED_SNOOZETIME [NSString stringWithFormat:@"%@ %@", [[NSBundle mainBundle] localizedStringForKey:@"EDIT_SNOOZE" value:@"Snooze" table:@"Localizable"], [[[NSBundle bundleWithPath:@"/Applications/Preferences.app"] localizedStringForKey:@"TIME" value:@"Time" table:@"Date & Time"] componentsSeparatedByString:@":"][0]]
+
+// iOS 6-safe macros (one for constructor, other for accessing own alarms)
+#define MODERN_IOS ([[[UIDevice currentDevice] systemVersion] floatValue] >= 7.0)
+#define OBJ_ALARM(obj) ([obj respondsToSelector:@selector(alarm)] ? obj.alarm : MSHookIvar<Alarm *>(obj, "_alarm"))
+
+/*****************************************************************************************/
+/********************************** Preferences Writing **********************************/
+/*****************************************************************************************/
 
 // Custom preferences plist writing, in order to prevent NSUserDefaults conflicts
 // based on origin process (also, removes the need for prefixing and such).
@@ -64,6 +76,47 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 	NSLog(@"[Snooze] %@ removed %@ from snooze alarm dictionary", success ? @"Successfully" : @"Sort of", alarmId);
 }
 
+/*****************************************************************************************/
+/**************************** Custom Snooze AlertViewDelegate ****************************/
+/*****************************************************************************************/
+
+@implementation SnoozeAlertViewDelegate
+
+// After the "Snooze Time" UIAlertView is dismissed, set its user-entered time to
+// the Alarm (via NSUserDefaults) that the parent edit Alarm view spawned from.
+- (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex {
+	if (buttonIndex != [alertView cancelButtonIndex]) {
+		NSString *alertViewText = [alertView textFieldAtIndex:0].text;
+		CGFloat snoozeTime = [alertViewText floatValue] * 60.0;
+		if (snoozeTime) {
+			NSString *snoozeKey = self.alarmId;
+			NSLog(@"[Snooze] Setting snooze interval %f for key: %@", snoozeTime, snoozeKey);
+			setSnoozeOverrideForAlarmId((int)snoozeTime, snoozeKey);
+
+			NSString *snoozeString = [NSString stringWithFormat:@"%.01f", snoozeTime / 60];
+			self.textLabel.text = LOCALIZED_MINUTES(snoozeString);
+		}
+
+		else {
+			NSLog(@"[Snooze] Couldn't assign snooze interval because %@ is not a valid integer.", alertViewText);
+		}
+
+		// If -reloadData is called, a really weird issue where all alarms become midnight
+		// and are frequently unremovable/unturnoffable occurs. Don't ask me why..
+		//  EditAlarmView *editAlarmView = MSHookIvar<EditAlarmView *>(controller, "_editAlarmView");
+		//  UITableView *table = MSHookIvar<UITableView *>(editAlarmView, "_settingsTable");
+		//  [table reloadData];
+	}
+}
+
+@end
+
+/*****************************************************************************************/
+/********************************** iOS-Specific Hooks ***********************************/
+/*****************************************************************************************/
+
+%group Modern // (iOS 7)
+
 %hook SBApplication
 
 // When an Alarm is snoozed, check to see if its alarmId has a user-defined snooze
@@ -92,6 +145,53 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 
 %end
 
+%end // %group Modern
+
+%group Ancient // (iOS 6)
+
+%hook SBApplication
+
+// Works, and is called in iOS 6, but it doesn't look like our magic Override key has the
+// same effect. thekirbylover's idea, where the key was used for Apple in-house testing so
+// developers didn't have to wait for the 9-minute snooze time, seems like it could have
+// been the brain-child of the iOS 7 MobileTimer team. This will need to be adjusted for the
+// functioning implementation (for now it's all visual).
+- (void)systemLocalNotificationAlertShouldSnooze:(id)systemLocalNotificationAlert forApplication:(id)application {
+	%log;
+
+	NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+	SBSystemLocalNotificationAlert *alert = (SBSystemLocalNotificationAlert *) systemLocalNotificationAlert;
+	UILocalNotification *localNotification = [application getPendingLocalNotification];
+
+	if (alert && localNotification.userInfo /* && [Alarm isSnoozeNotification:alert.localNotification] */ ) {
+		NSString *alarmId = localNotification.userInfo[@"alarmId"];
+		NSInteger snoozeTime = snoozeOverrideForAlarmId(alarmId);
+		NSInteger original = [defaults integerForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
+
+		NSLog(@"[Snooze] Detected alarm (%@) snoozed, replacing override key (%i) with key %i.", alarmId, (int)original, (int)snoozeTime);
+
+		[defaults setInteger:snoozeTime forKey:@"SBLocalNotificationSnoozeIntervalOverride"];
+	}
+
+	else {
+		NSLog(@"[Snooze] Couldn't effect snooze notification: %@ for application: %@", systemLocalNotificationAlert, application);
+	}
+
+	%orig();
+
+	[defaults removeObjectForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
+}
+
+%end
+
+%end // %group Ancient
+
+/*****************************************************************************************/
+/************************************* Shared Hooks **************************************/
+/*****************************************************************************************/
+
+%group Shared
+
 %hook EditAlarmViewController
 
 // Add a row to the edit (or add) Alarm view (in the Clock app).
@@ -106,7 +206,7 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 		cell.textLabel.text = LOCALIZED_SNOOZETIME;
 
 		NSString *snoozeTime = LOCALIZED_MINUTES(@"9.0");
-		NSInteger savedSnoozeTime = snoozeOverrideForAlarmId(self.alarm.alarmId);
+		NSInteger savedSnoozeTime = snoozeOverrideForAlarmId(OBJ_ALARM(self).alarmId);
 		if (savedSnoozeTime) {
 			CGFloat finalSnoozeTime = (savedSnoozeTime / 60.0);
 			NSString *finalSnoozeString = [NSString stringWithFormat:@"%.01f", finalSnoozeTime];
@@ -133,14 +233,14 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 
 		SnoozeAlertViewDelegate *changeSnoozeDelegate = [[SnoozeAlertViewDelegate alloc] init];
 		changeSnoozeDelegate.textLabel = [arg1 cellForRowAtIndexPath:arg2].detailTextLabel;
-		changeSnoozeDelegate.alarmId = self.alarm.alarmId;
+		changeSnoozeDelegate.alarmId = OBJ_ALARM(self).alarmId;
 
 		UIAlertView *changeSnoozeAlert = [[UIAlertView alloc] initWithTitle:LOCALIZED_SNOOZETIME message:nil delegate:changeSnoozeDelegate cancelButtonTitle:LOCALIZED_CANCEL otherButtonTitles:LOCALIZED_SAVE, nil];
 		changeSnoozeAlert.alertViewStyle = UIAlertViewStylePlainTextInput;
 
 		UITextField *changeSnoozeField = [changeSnoozeAlert textFieldAtIndex:0];
 		changeSnoozeField.keyboardType = UIKeyboardTypeDecimalPad;
-		changeSnoozeField.placeholder = @"e.g. 0.5, 1, 5, 9, 1337 (minutes)";
+		changeSnoozeField.placeholder = @"e.g. 0.5, 10, 1337 (minutes)";
 		[changeSnoozeField addTarget:self action:@selector(snooze_textFieldDidChange:) forControlEvents:UIControlEventEditingChanged];
 
 		[changeSnoozeAlert show];
@@ -217,33 +317,15 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 
 %end
 
-@implementation SnoozeAlertViewDelegate
+%end // %group Shared
 
-// After the "Snooze Time" UIAlertView is dismissed, set its user-entered time to
-// the Alarm (via NSUserDefaults) that the parent edit Alarm view spawned from.
-- (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex {
-	if (buttonIndex != [alertView cancelButtonIndex]) {
-		NSString *alertViewText = [alertView textFieldAtIndex:0].text;
-		CGFloat snoozeTime = [alertViewText floatValue] * 60.0;
-		if (snoozeTime) {
-			NSString *snoozeKey = self.alarmId;
-			NSLog(@"[Snooze] Setting snooze interval %f for key: %@", snoozeTime, snoozeKey);
-			setSnoozeOverrideForAlarmId((int)snoozeTime, snoozeKey);
+%ctor {
+	%init(Shared);
+	if (MODERN_IOS) {
+		%init(Modern);
+	}
 
-			NSString *snoozeString = [NSString stringWithFormat:@"%.01f", snoozeTime / 60];
-			self.textLabel.text = LOCALIZED_MINUTES(snoozeString);
-		}
-
-		else {
-			NSLog(@"[Snooze] Couldn't assign snooze interval because %@ is not a valid integer.", alertViewText);
-		}
-
-		// If -reloadData is called, a really weird issue where all alarms become midnight
-		// and are frequently unremovable/unturnoffable occurs. Don't ask me why..
-		//  EditAlarmView *editAlarmView = MSHookIvar<EditAlarmView *>(controller, "_editAlarmView");
-		//  UITableView *table = MSHookIvar<UITableView *>(editAlarmView, "_settingsTable");
-		//  [table reloadData];
+	else {
+		%init(Ancient);
 	}
 }
-
-@end

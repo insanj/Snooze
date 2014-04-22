@@ -3,6 +3,7 @@
 // Called right before snooze takes effect
 @interface SBApplication
 - (void)systemLocalNotificationAlertShouldSnooze:(id)notif;
+- (id)getPendingLocalNotification; // iOS 6
 @end
 
 // The snooze alert, with particular Alarm information
@@ -32,9 +33,10 @@
 // The ViewController for EditAlarmViews, which handles the tableViews
 @interface EditAlarmViewController : UIViewController <UITableViewDataSource, UITableViewDelegate> {
     EditAlarmView *_editAlarmView;
+    Alarm *_alarm; // iOS 6...
 }
 
-@property(readonly, nonatomic) Alarm *alarm;
+@property(readonly, nonatomic) Alarm *alarm; // iOS 7
 
 + (CGSize)desiredContentSize;
 - (void)tableView:(id)arg1 didSelectRowAtIndexPath:(id)arg2;
@@ -106,13 +108,10 @@
 - (void)activeChangedForAlarm:(Alarm *)arg1 active:(_Bool)arg2;
 @end
 
-
 @interface AlarmTableViewCell : UITableViewCell {
     id <AlarmActiveDelegate> _alarmActiveDelegate;
 }
 @end
-
-
 
 /* A nice custom log function for when there's too much syslog spam to wade through:
 
