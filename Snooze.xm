@@ -64,16 +64,21 @@ static void setSnoozeOverrideForAlarmId(NSInteger override, NSString *alarmId) {
 	NSLog(@"[Snooze] %@ wrote snooze alarm dictionary to %@!", success ? @"Successfully" : @"Sort of", writePath);
 }
 
-
 static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 	NSMutableDictionary *alarms = [NSMutableDictionary dictionaryWithDictionary:[NSDictionary dictionaryWithContentsOfFile:SNOOZE_PLIST]];
-	if (!alarms) {
-		return;
+	if (alarms) {
+		[alarms removeObjectForKey:alarmId];
+		BOOL success = [alarms writeToFile:SNOOZE_PLIST atomically:YES];
+		NSLog(@"[Snooze] %@ removed %@ from snooze alarm dictionary", success ? @"Successfully" : @"Sort of", alarmId);
 	}
+}
 
-	[alarms removeObjectForKey:alarmId];
-	BOOL success = [alarms writeToFile:SNOOZE_PLIST atomically:YES];
-	NSLog(@"[Snooze] %@ removed %@ from snooze alarm dictionary", success ? @"Successfully" : @"Sort of", alarmId);
+// Some nice trickery to guarantee localization support (, vs .)
+static NSString * snoozeLocalizedNumber(NSNumber *number) {
+	int minutesInt = ([number floatValue] / 60.0) * 100;
+	NSNumber *back = @(minutesInt / 100.0);
+
+	return [back descriptionWithLocale:[NSLocale currentLocale]];
 }
 
 /*****************************************************************************************/
@@ -87,18 +92,23 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 - (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex {
 	if (buttonIndex != [alertView cancelButtonIndex]) {
 		NSString *alertViewText = [alertView textFieldAtIndex:0].text;
-		CGFloat snoozeTime = [alertViewText floatValue] * 60.0;
-		if (snoozeTime) {
-			NSString *snoozeKey = self.alarmId;
-			NSLog(@"[Snooze] Setting snooze interval %f for key: %@", snoozeTime, snoozeKey);
-			setSnoozeOverrideForAlarmId((int)snoozeTime, snoozeKey);
+		NSNumber *snoozeTime = @([self scanStringForCGFloat:alertViewText] * 60.0);
 
-			NSString *snoozeString = [NSString stringWithFormat:@"%.01f", snoozeTime / 60];
-			self.textLabel.text = LOCALIZED_MINUTES(snoozeString);
+		if ([snoozeTime boolValue]) {
+			NSString *snoozeKey = self.alarmId;
+			NSLog(@"[Snooze] Setting snooze interval %@ for key: %@", snoozeTime, snoozeKey);
+			setSnoozeOverrideForAlarmId([snoozeTime integerValue], snoozeKey);
+
+			NSString *snoozeString = snoozeLocalizedNumber(snoozeTime);
+			self.textLabel.text =  [snoozeString isEqualToString:@"1"] ? LOCALIZED_MINUTE(snoozeString) : LOCALIZED_MINUTES(snoozeString);
 		}
 
 		else {
-			NSLog(@"[Snooze] Couldn't assign snooze interval because %@ is not a valid integer.", alertViewText);
+			NSLog(@"[Snooze] Couldn't assign snooze interval because %@ is not a valid float", alertViewText);
+			// This would be nice, but I promised breakthrough localization support... :p
+			// UIAlertView *errorAlert = [[UIAlertView alloc] initWithTitle:@"Oops!" message:@"Looks like Snooze had a problem saving your requested value. Make sure it's a valid floating point number, without any unfamiliar characters, and try again!" delegate:nil cancelButtonTitle:@"Dismiss" otherButtonTitles:nil];
+			// [errorAlert show];
+			// [errorAlert release];
 		}
 
 		// If -reloadData is called, a really weird issue where all alarms become midnight
@@ -107,6 +117,18 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 		//  UITableView *table = MSHookIvar<UITableView *>(editAlarmView, "_settingsTable");
 		//  [table reloadData];
 	}
+}
+
+// Prevents issues with localizations that use "," instead of "."
+// NSScanner -scanXXX avoidance method to let the compiler choose the correct scan method
+// for the current architecture. Derived from StackOverflow response from martin-r (2013).
+- (CGFloat)scanStringForCGFloat:(NSString *)string {
+ 	NSScanner *scanner = [NSScanner localizedScannerWithString:string];
+	CGFloat value;
+
+	// This return isn't very useful, as "value" will already be representative by being zero/non-zero.
+ 	BOOL success = _Generic(value, double:[scanner scanDouble:(double *)&value], float:[scanner scanFloat:(float *)&value]);
+ 	return success ? value : 0;
 }
 
 @end
@@ -124,13 +146,13 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 - (void)systemLocalNotificationAlertShouldSnooze:(id)arg1 {
 	NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
 	SBSystemLocalNotificationAlert *alert = (SBSystemLocalNotificationAlert *)arg1;
+	
 	if (alert && alert.localNotification.userInfo /* && [Alarm isSnoozeNotification:alert.localNotification] */ ) {
 		NSString *alarmId = alert.localNotification.userInfo[@"alarmId"];
 		NSInteger snoozeTime = snoozeOverrideForAlarmId(alarmId);
 		NSInteger original = [defaults integerForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
 
 		NSLog(@"[Snooze] Detected alarm (%@) snoozed, replacing override key (%i) with key %i.", alarmId, (int)original, (int)snoozeTime);
-
 		[defaults setInteger:snoozeTime forKey:@"SBLocalNotificationSnoozeIntervalOverride"];
 	}
 
@@ -139,7 +161,6 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 	}
 
 	%orig();
-
 	[defaults removeObjectForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
 }
 
@@ -157,8 +178,6 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 // been the brain-child of the iOS 7 MobileTimer team. This will need to be adjusted for the
 // functioning implementation (for now it's all visual).
 - (void)systemLocalNotificationAlertShouldSnooze:(id)systemLocalNotificationAlert forApplication:(id)application {
-	%log;
-
 	NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
 	SBSystemLocalNotificationAlert *alert = (SBSystemLocalNotificationAlert *) systemLocalNotificationAlert;
 	UILocalNotification *localNotification = [application getPendingLocalNotification];
@@ -169,7 +188,6 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 		NSInteger original = [defaults integerForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
 
 		NSLog(@"[Snooze] Detected alarm (%@) snoozed, replacing override key (%i) with key %i.", alarmId, (int)original, (int)snoozeTime);
-
 		[defaults setInteger:snoozeTime forKey:@"SBLocalNotificationSnoozeIntervalOverride"];
 	}
 
@@ -205,19 +223,15 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 	if (arg2.row == [self tableView:arg1 numberOfRowsInSection:arg2.section]-1) {
 		cell.textLabel.text = LOCALIZED_SNOOZETIME;
 
-		NSString *snoozeTime = LOCALIZED_MINUTES(@"9.0");
+		NSString *snoozeTime;
 		NSInteger savedSnoozeTime = snoozeOverrideForAlarmId(OBJ_ALARM(self).alarmId);
 		if (savedSnoozeTime) {
-			CGFloat finalSnoozeTime = (savedSnoozeTime / 60.0);
-			NSString *finalSnoozeString = [NSString stringWithFormat:@"%.01f", finalSnoozeTime];
+			NSString *finalSnoozeString = snoozeLocalizedNumber(@(savedSnoozeTime));
+			snoozeTime = [finalSnoozeString isEqualToString:@"1"] ? LOCALIZED_MINUTE(finalSnoozeString) : LOCALIZED_MINUTES(finalSnoozeString);
+		}
 
-			if (finalSnoozeTime != 1.0) {
-				snoozeTime = LOCALIZED_MINUTES(finalSnoozeString);
-			}
-
-			else {
-				snoozeTime = LOCALIZED_MINUTE(finalSnoozeString);
-			}
+		else {
+			snoozeTime = LOCALIZED_MINUTES([@(9.0) descriptionWithLocale:[NSLocale currentLocale]]);
 		}
 
 		cell.detailTextLabel.text = snoozeTime;
@@ -240,7 +254,7 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 
 		UITextField *changeSnoozeField = [changeSnoozeAlert textFieldAtIndex:0];
 		changeSnoozeField.keyboardType = UIKeyboardTypeDecimalPad;
-		changeSnoozeField.placeholder = @"e.g. 0.5, 10, 1337 (minutes)";
+		changeSnoozeField.placeholder = [NSString stringWithFormat:@"e.g. %@, 10, 1337 (%@)", [@(0.5) descriptionWithLocale:[NSLocale currentLocale]], [LOCALIZED_MINUTES(0.0) componentsSeparatedByString:@" "][1]];
 		[changeSnoozeField addTarget:self action:@selector(snooze_textFieldDidChange:) forControlEvents:UIControlEventEditingChanged];
 
 		[changeSnoozeAlert show];
