@@ -1,4 +1,11 @@
 #import <UIKit/UIKit.h>
+#import "substrate.h"
+
+#ifdef DEBUG
+    #define SZLOG(fmt, ...) NSLog((@"[Snooze] %s [Line %d] " fmt), __PRETTY_FUNCTION__, __LINE__, ##__VA_ARGS__)
+#else
+    #define SZLOG(fmt, ...) 
+#endif
 
 // Called right before snooze takes effect
 @interface SBApplication
@@ -112,24 +119,3 @@
     id <AlarmActiveDelegate> _alarmActiveDelegate;
 }
 @end
-
-/* A nice custom log function for when there's too much syslog spam to wade through:
-
-static void snoozeLog(NSString *logText) {
-	NSFileManager *manager = [NSFileManager defaultManager];
-	NSString *logPath = @"/var/log/snoozelog";
-	if (![manager fileExistsAtPath:logPath]) {
-		[manager createFileAtPath:logPath contents:[logText dataUsingEncoding:NSASCIIStringEncoding] attributes:nil];
-	}
-
-	else {
-		NSError *logError;
-		NSString *logAppendedText = [NSString stringWithContentsOfFile:logPath encoding:NSASCIIStringEncoding error:&logError];
-		[[logAppendedText stringByAppendingString:@"\nstr"]]
-	}
-
-- (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile encoding:(NSStringEncoding)enc error:(NSError **)error
-
-}
-
-*/

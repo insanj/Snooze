@@ -1,9 +1,8 @@
-#Snooze
+# Snooze
 
 Configurable snooze times. Supports all devices running iOS 7 (iOS 6 support coming soon). Subject of my [JailbreakCon 2014 talk](https://www.youtube.com/watch?v=ITnt15K7JvQ).
 
-
-##Story
+## History
 
 Snooze is a fantastic example of, at least for me, an average tweak's development from idea to iteration to completion. When I first decided to develop Snooze, I assumed it had to begin in the MobileTimer private framework, that's why it wasn't possible to alter it with utilities like Flex, and why it didn't show up when I cursory-searched a few months ago (in a less experienced time). So, I dived in, and found a few great methods in the Alarm and Alarm/Clock/TimerManager classes. Unfortunately, [%log](http://iphonedevwiki.net/index.php/Logos#.25log)'ing all of them wasn't very pretty. Only one was consistently called:
    `+[Alarm isSnoozeNotification:arg1]`
@@ -28,7 +27,7 @@ But still, that sounded good. Here's what it spit out, after I snoozed an alarm:
 		}
 	}]
 
-That seemed simple. But it was called more than once, maybe even dozens of times. Comparing all of those calls would be exhausting. A simple implementation (reducing the "fire date" by 9, the default snooze time, and increasing it by SZADD_AMOUNT, my test amount) failed on all counts. Although it did alter the notification, that didn't seem to have any effect on the actual performace of an Alarm. So, I peeled through some dumps I had lying around for the Clock app and SpringBoard. In a twist, I found this handy method, in a class I'd never even heard of:
+That seemed simple. But it was called more than once, maybe even dozens of times. Comparing all of those calls would be exhausting. A simple implementation (reducing the "fire date" by 9, the default snooze time, and increasing it by ```SZADD_AMOUNT```, my test amount) failed on all counts. Although it did alter the notification, that didn't seem to have any effect on the actual performance of an Alarm. So, I peeled through some dumps I had lying around for the Clock app and SpringBoard. In a twist, I found this handy method, in a class I'd never even heard of:
 
 	-[SBClockDataProvider _handleAlarmSnoozedNotification:]
 
@@ -130,18 +129,16 @@ So, I assumed overriding *this* to swap out the notification argument would be f
 			}
 		}
 
-But that didn't work. Hijacking the notification did update the timer for the bulletins (super easy to see on the lock screen), but it had no real effect on the notification fire date, or Alarm. Some minor investigations into that area of the decompilation made me feel hopeful for some global snooze-time key, but there was only this weird "SBLocalNotificationSnoozeIntervalOverride" reference, and I couldn't find more than a single mention of it in the entire SpringBoard. And, because alerts from a few other apps can be "snoozed" (eg Reminders), it was clear it was some system value for other alerts. Moving on, I traced this method next:
+But that didn't work. Hijacking the notification did update the timer for the bulletins (super easy to see on the lock screen), but it had no real effect on the notification fire date, or Alarm. Some minor investigations into that area of the decompilation made me feel hopeful for some global snooze-time key, but there was only this weird ```SBLocalNotificationSnoozeIntervalOverride``` reference, and I couldn't find more than a single mention of it in the entire SpringBoard. And, because alerts from a few other apps can be "snoozed" (e.g. Reminders), it was clear it was some system value for other alerts. Moving on, I traced this method next:
 
 	-[SBClockDataProvider _handlePossibleAlarmNotificationUpdate:]
 
 
-Tracing this had no immediate effect, but it ended me up in the PCPersistentTimer class, which was part of the sister framework PersistentConnection. Popping some logs from time-dependant PCPersistentTimer -init hook was nice looking:
+Tracing this had no immediate effect, but it ended me up in the ```PCPersistentTimer``` class, which was part of the sister framework PersistentConnection. Popping some logs from time-dependent ```PCPersistentTimer``` ```-init``` hook was nice looking:
 
 	SpringBoard[30169]: [Snooze] Overriding preset time interval 9.999883 to be personalized 1395372853.630588...
 
-
 	%hook PCPersistentTimer
-
 
 	- (id)initWithTimeInterval:(double)arg1 serviceIdentifier:(id)arg2 target:(id)arg3 selector:(SEL)arg4 userInfo:(id)arg5 {
 		if (sz_overrideInterval != 0.0) {
@@ -158,7 +155,7 @@ Tracing this had no immediate effect, but it ended me up in the PCPersistentTime
 
 	%end
 
-But that had no noticeable effect on the codebase. Everything operated as it had before, meaning I was simply following the crumb trail *down*, instead of *up*. Without any other choice, I went back to the mysterious SBClockDataProvider, this time for -_publishAlarmsWithScheduledNotifications:
+But that had no noticeable effect on the codebase. Everything operated as it had before, meaning I was simply following the crumb trail *down*, instead of *up*. Without any other choice, I went back to the mysterious ```SBClockDataProvider```, this time for ```-_publishAlarmsWithScheduledNotifications```:
 
 	without anything (set for 11:59, log 8 seconds later)
 
@@ -187,8 +184,8 @@ Uh-oh. This was down as well. The "fire date" was identical to the time snoozed.
 
 Let's see what it prints:
 
-`-[<SBClockDataProvider: 0x170a7efc0> _nextAlarmForFeed:32 withNotifications:(
-		<UIConcreteLocalNotification: 0x1783288e0>{
+	-[<SBClockDataProvider: 0x170a7efc0> _nextAlarmForFeed:32 withNotifications:(
+		<UIConcreteLocalNotification: 0x1783288e0> {
 			fire date = Friday, March 21, 2014 at 12:16:01 AM Eastern Daylight Time,
 			time zone = (null),
 			repeat interval = 0,
@@ -204,18 +201,18 @@ Let's see what it prints:
 				soundType = 1;
 			}
 		}
-	)
-]`
+	)]
 
-Not bad! Looks like a very similar functionality to our original %hook, back up there. Rubbing my hands together, I decided to create a global, static array that could hold all the alarmIds, and then, in this method, check to see if, in any of the notifications, there's one of those ids. If so, it would reduce the time by 9 minutes, and add my fake value (10 seconds). This, however, was no more than a hopeful thought. Since this method is called several times back-to-back, comparing the dates would be tough: sometimes they were the same between calls, something they'd be upped by 9 minutes, sometimes they'd have my 10 second addition applied more than once. What was happening? After playing around with a bit too many stringy ideas for this method, I realized I was *still going down* the call chain.
+Not bad! Looks like a very similar functionality to our original ```%hook```, back up there. Rubbing my hands together, I decided to create a global, static array that could hold all the alarmIds, and then, in this method, check to see if, in any of the notifications, there's one of those ids. If so, it would reduce the time by 9 minutes, and add my fake value (10 seconds). This, however, was no more than a hopeful thought. Since this method is called several times back-to-back, comparing the dates would be tough: sometimes they were the same between calls, something they'd be upped by 9 minutes, sometimes they'd have my 10 second addition applied more than once. What was happening? After playing around with a bit too many stringy ideas for this method, I realized I was *still going down* the call chain.
 
-That's when SBLocalNotificationSnoozeIntervalOverride caught my eye again. It popped up in the [stack trace](http://github.com/insanj/Symbolicator) for this method, *upwards*. But how did I miss that? Because it was surrounded by conditionals in the method I had started in, and sounded bizarre. The full, jargony method had this one, serene line, that I underestimated:
+That's when ```SBLocalNotificationSnoozeIntervalOverride``` caught my eye again. It popped up in the [stack trace](http://github.com/insanj/Symbolicator) for this method, *upwards*. But how did I miss that? Because it was surrounded by conditionals in the method I had started in, and sounded bizarre. The full, jargon-y method had this one, serene line, that I underestimated:
+
 	`_R0 = objc_msgSend(v7, "integerForKey:", CFSTR("SBLocalNotificationSnoozeIntervalOverride"));`
 
 In essence, that translated into:
-	`If exists, make the snooze time additional equal to [[NSUserDefaults standardUserDefaults] integerForKey:SBLocalNotificationSnoozeIntervalOverride]`
+> If exists, make the snooze time additional equal to ```[[NSUserDefaults standardUserDefaults] integerForKey:SBLocalNotificationSnoozeIntervalOverride]```
 
-It wasn't an opaque system override at all— and could be used to alter the snooze interval with hardly any lines of code. Logging all of the -integerForKey's of NSUserDefaults (the universal XML-wrapped quick-and-dirty storage system for iOS, useful for tiny values) made me realize Apple uses it immensely, for tons of different things. Just for fun, I %hook'd the method, with a very simply body:
+It wasn't an opaque system override at all— and could be used to alter the snooze interval with hardly any lines of code. Logging all of the ```-integerForKey```s of ```NSUserDefaults``` (the universal XML-wrapped quick-and-dirty storage system for iOS, useful for tiny values) made me realize Apple uses it immensely, for tons of different things. Just for fun, I ```%hook```'d the method, with a very simply body:
 
 
 	%hook NSUserDefaults
@@ -236,25 +233,20 @@ And you know what? It worked. Perfectly. That's the only block of code that matt
 
 Just another day in tweak land.
 
-#####\- Julian Weiss
+## [License](LICENSE.md)
 
----------------------------------------
-[Creative Commons Attribution-NonCommercial 3.0 United States License](http://creativecommons.org/licenses/by-nc/3.0/us/) as of 2014:
+	Snooze: Configurable snooze times.
+	Copyright (C) 2014 Julian (insanj) Weiss
+	
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
 
-	Creative Commons Attribution-NonCommercial 3.0 United States License
-	Please visit above link for full license.
-	Human-readable summary of your abilities has been transcribed below.
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
-	You are free to:
-	Share — copy and redistribute the material in any medium or format
-	Adapt — remix, transform, and build upon the material
-	The licensor cannot revoke these freedoms as long as you follow the license terms.
-
-	Under the following terms:
-	Attribution — You must give appropriate credit, provide a link to the license, and indicate if changes were made. You may do so in any reasonable manner, but not in any way that suggests the licensor endorses you or your use.
-	NonCommercial — You may not use the material for commercial purposes.
-	No additional restrictions — You may not apply legal terms or technological measures that legally restrict others from doing anything the license permits.
-
-	Notices:
-	You do not have to comply with the license for elements of the material in the public domain or where your use is permitted by an applicable exception or limitation.
-	No warranties are given. The license may not give you all of the permissions necessary for your intended use. For example, other rights such as publicity, privacy, or moral rights may limit how you use the material.
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.

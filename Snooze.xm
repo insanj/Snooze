@@ -1,13 +1,31 @@
 #import "Snooze.h"
 
-/*****************************************************************************************/
-/********************************* Compatibility Macros **********************************/
-/*****************************************************************************************/
+/*
+ ██████╗ ██████╗ ███╗   ███╗██████╗  █████╗ ████████╗██╗██████╗ ██╗██╗     ██╗████████╗██╗   ██╗
+██╔════╝██╔═══██╗████╗ ████║██╔══██╗██╔══██╗╚══██╔══╝██║██╔══██╗██║██║     ██║╚══██╔══╝╚██╗ ██╔╝
+██║     ██║   ██║██╔████╔██║██████╔╝███████║   ██║   ██║██████╔╝██║██║     ██║   ██║    ╚████╔╝ 
+██║     ██║   ██║██║╚██╔╝██║██╔═══╝ ██╔══██║   ██║   ██║██╔══██╗██║██║     ██║   ██║     ╚██╔╝  
+╚██████╗╚██████╔╝██║ ╚═╝ ██║██║     ██║  ██║   ██║   ██║██████╔╝██║███████╗██║   ██║      ██║   
+ ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚═╝╚═════╝ ╚═╝╚══════╝╚═╝   ╚═╝      ╚═╝                                                                                               
+*/
 
 // Macros for custom plist writing. This can be changed at will, as long as the path
 // is allowed under mobile permissions (thus the req for NSHomeDirectory).
 #define SNOOZE_FOLDER [NSHomeDirectory() stringByAppendingPathComponent:@"/Library/Application Support/Snooze"]
 #define SNOOZE_PLIST [NSHomeDirectory() stringByAppendingPathComponent:@"/Library/Application Support/Snooze/Alarms.plist"]
+
+// iOS 6-safe macros (one for constructor, other for accessing own alarms)
+#define MODERN_IOS ([[[UIDevice currentDevice] systemVersion] floatValue] >= 7.0)
+#define OBJ_ALARM(obj) ([obj respondsToSelector:@selector(alarm)] ? obj.alarm : MSHookIvar<Alarm *>(obj, "_alarm"))
+
+/*
+██╗      ██████╗  ██████╗ █████╗ ██╗     ██╗███████╗ █████╗ ████████╗██╗ ██████╗ ███╗   ██╗
+██║     ██╔═══██╗██╔════╝██╔══██╗██║     ██║╚══███╔╝██╔══██╗╚══██╔══╝██║██╔═══██╗████╗  ██║
+██║     ██║   ██║██║     ███████║██║     ██║  ███╔╝ ███████║   ██║   ██║██║   ██║██╔██╗ ██║
+██║     ██║   ██║██║     ██╔══██║██║     ██║ ███╔╝  ██╔══██║   ██║   ██║██║   ██║██║╚██╗██║
+███████╗╚██████╔╝╚██████╗██║  ██║███████╗██║███████╗██║  ██║   ██║   ██║╚██████╔╝██║ ╚████║
+╚══════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝                                                                                      
+*/
 
 // Localized versions of every word displayed to the user. Can be ignored, if needed.
 #define LOCALIZED_SAVE [[NSBundle mainBundle] localizedStringForKey:@"SAVE" value:@"Save" table:@"Localizable"]
@@ -16,20 +34,21 @@
 #define LOCALIZED_MINUTES(min) [NSString stringWithFormat:[[NSBundle mainBundle] localizedStringForKey:@"10_MINUTES" value:@"%@ Minutes" table:@"General"], min]
 #define LOCALIZED_SNOOZETIME [NSString stringWithFormat:@"%@ %@", [[NSBundle mainBundle] localizedStringForKey:@"EDIT_SNOOZE" value:@"Snooze" table:@"Localizable"], [[[NSBundle bundleWithPath:@"/Applications/Preferences.app"] localizedStringForKey:@"TIME" value:@"Time" table:@"Date & Time"] componentsSeparatedByString:@":"][0]]
 
-// iOS 6-safe macros (one for constructor, other for accessing own alarms)
-#define MODERN_IOS ([[[UIDevice currentDevice] systemVersion] floatValue] >= 7.0)
-#define OBJ_ALARM(obj) ([obj respondsToSelector:@selector(alarm)] ? obj.alarm : MSHookIvar<Alarm *>(obj, "_alarm"))
-
-/*****************************************************************************************/
-/********************************** Preferences Writing **********************************/
-/*****************************************************************************************/
+/*
+██████╗ ██████╗ ███████╗███████╗███████╗██████╗ ███████╗███╗   ██╗ ██████╗███████╗███████╗
+██╔══██╗██╔══██╗██╔════╝██╔════╝██╔════╝██╔══██╗██╔════╝████╗  ██║██╔════╝██╔════╝██╔════╝
+██████╔╝██████╔╝█████╗  █████╗  █████╗  ██████╔╝█████╗  ██╔██╗ ██║██║     █████╗  ███████╗
+██╔═══╝ ██╔══██╗██╔══╝  ██╔══╝  ██╔══╝  ██╔══██╗██╔══╝  ██║╚██╗██║██║     ██╔══╝  ╚════██║
+██║     ██║  ██║███████╗██║     ███████╗██║  ██║███████╗██║ ╚████║╚██████╗███████╗███████║
+╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝     ╚══════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝ ╚═════╝╚══════╝╚══════╝
+*/
 
 // Custom preferences plist writing, in order to prevent NSUserDefaults conflicts
 // based on origin process (also, removes the need for prefixing and such).
 static NSInteger snoozeOverrideForAlarmId(NSString *alarmId) {
 	NSDictionary *alarms = [NSDictionary dictionaryWithContentsOfFile:SNOOZE_PLIST];
 	if (!alarms || !alarms[alarmId]) {
-		NSLog(@"[Snooze] Couldn't find a snooze override for alarmId: %@", alarmId);
+		SZLOG(@"Couldn't find a snooze override for alarmId: %@", alarmId);
 		return 0;
 	}
 
@@ -44,7 +63,7 @@ static void setSnoozeOverrideForAlarmId(NSInteger override, NSString *alarmId) {
 		success = [manager createDirectoryAtPath:path withIntermediateDirectories:NO attributes:nil error:&error];
 
 		if (error || !success) {
-			NSLog(@"[Snooze] Had trouble writing alarmId (%@) to save path (%@). Success: %@, Error: %@", alarmId, path, success ? @"YES" : @"NO", error);
+			SZLOG(@"Had trouble writing alarmId (%@) to save path (%@). Success: %@, Error: %@", alarmId, path, success ? @"YES" : @"NO", error);
 		}
 	}
 
@@ -61,7 +80,7 @@ static void setSnoozeOverrideForAlarmId(NSInteger override, NSString *alarmId) {
 		success = [alarmMutableDict writeToFile:writePath atomically:YES];
 	}
 
-	NSLog(@"[Snooze] %@ wrote snooze alarm dictionary to %@!", success ? @"Successfully" : @"Sort of", writePath);
+	SZLOG(@"%@ wrote snooze alarm dictionary to %@!", success ? @"Successfully" : @"Sort of", writePath);
 }
 
 static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
@@ -69,7 +88,7 @@ static void removeSnoozeOverrideForAlarmId(NSString *alarmId) {
 	if (alarms) {
 		[alarms removeObjectForKey:alarmId];
 		BOOL success = [alarms writeToFile:SNOOZE_PLIST atomically:YES];
-		NSLog(@"[Snooze] %@ removed %@ from snooze alarm dictionary", success ? @"Successfully" : @"Sort of", alarmId);
+		SZLOG(@"%@ removed %@ from snooze alarm dictionary", success ? @"Successfully" : @"Sort of", alarmId);
 	}
 }
 
@@ -81,9 +100,14 @@ static NSString * snoozeLocalizedNumber(NSNumber *number) {
 	return [back descriptionWithLocale:[NSLocale currentLocale]];
 }
 
-/*****************************************************************************************/
-/**************************** Custom Snooze AlertViewDelegate ****************************/
-/*****************************************************************************************/
+/*
+ █████╗ ██╗     ███████╗██████╗ ████████╗██╗   ██╗██╗███████╗██╗    ██╗
+██╔══██╗██║     ██╔════╝██╔══██╗╚══██╔══╝██║   ██║██║██╔════╝██║    ██║
+███████║██║     █████╗  ██████╔╝   ██║   ██║   ██║██║█████╗  ██║ █╗ ██║
+██╔══██║██║     ██╔══╝  ██╔══██╗   ██║   ╚██╗ ██╔╝██║██╔══╝  ██║███╗██║
+██║  ██║███████╗███████╗██║  ██║   ██║    ╚████╔╝ ██║███████╗╚███╔███╔╝
+╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝   ╚═╝     ╚═══╝  ╚═╝╚══════╝ ╚══╝╚══╝ 
+*/
 
 @implementation SnoozeAlertViewDelegate
 
@@ -96,7 +120,7 @@ static NSString * snoozeLocalizedNumber(NSNumber *number) {
 
 		if ([snoozeTime boolValue]) {
 			NSString *snoozeKey = self.alarmId;
-			NSLog(@"[Snooze] Setting snooze interval %@ for key: %@", snoozeTime, snoozeKey);
+			SZLOG(@"Setting snooze interval %@ for key: %@", snoozeTime, snoozeKey);
 			setSnoozeOverrideForAlarmId([snoozeTime integerValue], snoozeKey);
 
 			NSString *snoozeString = snoozeLocalizedNumber(snoozeTime);
@@ -104,7 +128,7 @@ static NSString * snoozeLocalizedNumber(NSNumber *number) {
 		}
 
 		else {
-			NSLog(@"[Snooze] Couldn't assign snooze interval because %@ is not a valid float", alertViewText);
+			SZLOG(@"Couldn't assign snooze interval because %@ is not a valid float", alertViewText);
 			// This would be nice, but I promised breakthrough localization support... :p
 			// UIAlertView *errorAlert = [[UIAlertView alloc] initWithTitle:@"Oops!" message:@"Looks like Snooze had a problem saving your requested value. Make sure it's a valid floating point number, without any unfamiliar characters, and try again!" delegate:nil cancelButtonTitle:@"Dismiss" otherButtonTitles:nil];
 			// [errorAlert show];
@@ -133,9 +157,14 @@ static NSString * snoozeLocalizedNumber(NSNumber *number) {
 
 @end
 
-/*****************************************************************************************/
-/********************************** iOS-Specific Hooks ***********************************/
-/*****************************************************************************************/
+/*
+███╗   ███╗ ██████╗ ██████╗ ███████╗██████╗ ███╗   ██╗
+████╗ ████║██╔═══██╗██╔══██╗██╔════╝██╔══██╗████╗  ██║
+██╔████╔██║██║   ██║██║  ██║█████╗  ██████╔╝██╔██╗ ██║
+██║╚██╔╝██║██║   ██║██║  ██║██╔══╝  ██╔══██╗██║╚██╗██║
+██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗██║  ██║██║ ╚████║
+╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝
+*/
 
 %group Modern // (iOS 7)
 
@@ -152,12 +181,12 @@ static NSString * snoozeLocalizedNumber(NSNumber *number) {
 		NSInteger snoozeTime = snoozeOverrideForAlarmId(alarmId);
 		NSInteger original = [defaults integerForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
 
-		NSLog(@"[Snooze] Detected alarm (%@) snoozed, replacing override key (%i) with key %i.", alarmId, (int)original, (int)snoozeTime);
+		SZLOG(@"Detected alarm (%@) snoozed, replacing override key (%i) with key %i.", alarmId, (int)original, (int)snoozeTime);
 		[defaults setInteger:snoozeTime forKey:@"SBLocalNotificationSnoozeIntervalOverride"];
 	}
 
 	else {
-		NSLog(@"[Snooze] Couldn't effect snooze notification: %@", arg1);
+		SZLOG(@"Couldn't effect snooze notification: %@", arg1);
 	}
 
 	%orig();
@@ -167,6 +196,15 @@ static NSString * snoozeLocalizedNumber(NSNumber *number) {
 %end
 
 %end // %group Modern
+
+/*
+ █████╗ ███╗   ██╗ ██████╗██╗███████╗███╗   ██╗████████╗
+██╔══██╗████╗  ██║██╔════╝██║██╔════╝████╗  ██║╚══██╔══╝
+███████║██╔██╗ ██║██║     ██║█████╗  ██╔██╗ ██║   ██║   
+██╔══██║██║╚██╗██║██║     ██║██╔══╝  ██║╚██╗██║   ██║   
+██║  ██║██║ ╚████║╚██████╗██║███████╗██║ ╚████║   ██║   
+╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝╚═╝╚══════╝╚═╝  ╚═══╝   ╚═╝   
+*/
 
 %group Ancient // (iOS 6)
 
@@ -187,12 +225,12 @@ static NSString * snoozeLocalizedNumber(NSNumber *number) {
 		NSInteger snoozeTime = snoozeOverrideForAlarmId(alarmId);
 		NSInteger original = [defaults integerForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
 
-		NSLog(@"[Snooze] Detected alarm (%@) snoozed, replacing override key (%i) with key %i.", alarmId, (int)original, (int)snoozeTime);
+		SZLOG(@"Detected alarm (%@) snoozed, replacing override key (%i) with key %i.", alarmId, (int)original, (int)snoozeTime);
 		[defaults setInteger:snoozeTime forKey:@"SBLocalNotificationSnoozeIntervalOverride"];
 	}
 
 	else {
-		NSLog(@"[Snooze] Couldn't effect snooze notification: %@ for application: %@", systemLocalNotificationAlert, application);
+		SZLOG(@"Couldn't effect snooze notification: %@ for application: %@", systemLocalNotificationAlert, application);
 	}
 
 	%orig();
@@ -204,9 +242,14 @@ static NSString * snoozeLocalizedNumber(NSNumber *number) {
 
 %end // %group Ancient
 
-/*****************************************************************************************/
-/************************************* Shared Hooks **************************************/
-/*****************************************************************************************/
+/*
+███████╗██╗  ██╗ █████╗ ██████╗ ███████╗██████╗ 
+██╔════╝██║  ██║██╔══██╗██╔══██╗██╔════╝██╔══██╗
+███████╗███████║███████║██████╔╝█████╗  ██║  ██║
+╚════██║██╔══██║██╔══██║██╔══██╗██╔══╝  ██║  ██║
+███████║██║  ██║██║  ██║██║  ██║███████╗██████╔╝
+╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═════╝ 
+*/
 
 %group Shared
 
@@ -317,12 +360,12 @@ static NSString * snoozeLocalizedNumber(NSNumber *number) {
 		Alarm *editedAlarm = MSHookIvar<Alarm *>(self, "_alarmToEdit");
 
 		if (editedAlarm) {
-			NSLog(@"[Snooze] Detected deletion of alarm cell, time for easy plist cleaning...");
+			SZLOG(@"Detected deletion of alarm cell, time for easy plist cleaning...");
 			removeSnoozeOverrideForAlarmId(editedAlarm.alarmId);
 		}
 
 		else {
-			NSLog(@"[Snooze] Detected deletion of alarm cell, but there's nothing we can do...");
+			SZLOG(@"Detected deletion of alarm cell, but there's nothing we can do...");
 		}
 	}
 
@@ -332,6 +375,15 @@ static NSString * snoozeLocalizedNumber(NSNumber *number) {
 %end
 
 %end // %group Shared
+
+/*
+ ██████╗████████╗ ██████╗ ██████╗ 
+██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗
+██║        ██║   ██║   ██║██████╔╝
+██║        ██║   ██║   ██║██╔══██╗
+╚██████╗   ██║   ╚██████╔╝██║  ██║
+ ╚═════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝
+*/                               
 
 %ctor {
 	%init(Shared);
