@@ -15,7 +15,8 @@
 #define SNOOZE_PLIST [NSHomeDirectory() stringByAppendingPathComponent:@"/Library/Application Support/Snooze/Alarms.plist"]
 
 // iOS 6-safe macros (one for constructor, other for accessing own alarms)
-#define MODERN_IOS ([[[UIDevice currentDevice] systemVersion] floatValue] >= 7.0)
+#define MODERN_IOS7 ([[[UIDevice currentDevice] systemVersion] floatValue] >= 7.0)
+#define MODERN_IOS8 ([[[UIDevice currentDevice] systemVersion] floatValue] >= 8.0)
 #define OBJ_ALARM(obj) ([obj respondsToSelector:@selector(alarm)] ? obj.alarm : MSHookIvar<Alarm *>(obj, "_alarm"))
 
 /*
@@ -158,15 +159,54 @@ static NSString * snoozeLocalizedNumber(NSNumber *number) {
 @end
 
 /*
-███╗   ███╗ ██████╗ ██████╗ ███████╗██████╗ ███╗   ██╗
-████╗ ████║██╔═══██╗██╔══██╗██╔════╝██╔══██╗████╗  ██║
-██╔████╔██║██║   ██║██║  ██║█████╗  ██████╔╝██╔██╗ ██║
-██║╚██╔╝██║██║   ██║██║  ██║██╔══╝  ██╔══██╗██║╚██╗██║
-██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗██║  ██║██║ ╚████║
-╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝
+███╗   ███╗ ██████╗ ██████╗ ███████╗██████╗ ███╗   ██╗     █████╗
+████╗ ████║██╔═══██╗██╔══██╗██╔════╝██╔══██╗████╗  ██║    ██╔══██╗
+██╔████╔██║██║   ██║██║  ██║█████╗  ██████╔╝██╔██╗ ██║    ╚█████╔╝
+██║╚██╔╝██║██║   ██║██║  ██║██╔══╝  ██╔══██╗██║╚██╗██║    ██╔══██╗
+██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗██║  ██║██║ ╚████║    ╚█████╔╝
+╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝     ╚════╝
 */
 
-%group Modern // (iOS 7)
+%group Modern8 // (iOS 8)
+
+%hook SBApplication
+
+// When an Alarm is snoozed, check to see if its alarmId has a user-defined snooze
+// value (in NSUserDefaults), and if so, immediately replace it before handled.
+- (void)scheduleSnoozeNotificationForLocalNotification:(UILocalNotification *)localNotification {
+	NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+
+	if (localNotification.userInfo /* && [Alarm isSnoozeNotification:localNotification] */ ) {
+		NSString *alarmId = localNotification.userInfo[@"alarmId"];
+		NSInteger snoozeTime = snoozeOverrideForAlarmId(alarmId);
+		NSInteger original = [defaults integerForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
+
+		SZLOG(@"Detected alarm (%@) snoozed, replacing override key (%i) with key %i.", alarmId, (int)original, (int)snoozeTime);
+		[defaults setInteger:snoozeTime forKey:@"SBLocalNotificationSnoozeIntervalOverride"];
+	}
+
+	else {
+		SZLOG(@"Couldn't effect snooze notification: %@", arg1);
+	}
+
+	%orig();
+	[defaults removeObjectForKey:@"SBLocalNotificationSnoozeIntervalOverride"];
+}
+
+%end
+
+%end // %group Modern8
+
+/*
+███╗   ███╗ ██████╗ ██████╗ ███████╗██████╗ ███╗   ██╗    ███████╗
+████╗ ████║██╔═══██╗██╔══██╗██╔════╝██╔══██╗████╗  ██║    ╚════██║
+██╔████╔██║██║   ██║██║  ██║█████╗  ██████╔╝██╔██╗ ██║        ██╔╝
+██║╚██╔╝██║██║   ██║██║  ██║██╔══╝  ██╔══██╗██║╚██╗██║       ██╔╝
+██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗██║  ██║██║ ╚████║       ██║
+╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝       ╚═╝
+*/
+
+%group Modern7 // (iOS 7)
 
 %hook SBApplication
 
@@ -195,7 +235,7 @@ static NSString * snoozeLocalizedNumber(NSNumber *number) {
 
 %end
 
-%end // %group Modern
+%end // %group Modern7
 
 /*
  █████╗ ███╗   ██╗ ██████╗██╗███████╗███╗   ██╗████████╗
@@ -387,8 +427,12 @@ static NSString * snoozeLocalizedNumber(NSNumber *number) {
 
 %ctor {
 	%init(Shared);
-	if (MODERN_IOS) {
-		%init(Modern);
+	if (MODERN_IOS8) {
+		%init(Modern8);
+	}
+
+	else if (MODERN_IOS7) {
+		%init(Modern7);
 	}
 
 	else {
