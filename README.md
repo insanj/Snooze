@@ -1,6 +1,6 @@
 # Snooze
 
-Configurable snooze times. Supports all devices running iOS 7 (iOS 6 support coming soon). Subject of my [JailbreakCon 2014 talk](https://www.youtube.com/watch?v=ITnt15K7JvQ).
+Configurable snooze times. Supports all devices running iOS 7 - 8. Subject of my [JailbreakCon 2014 talk](https://www.youtube.com/watch?v=ITnt15K7JvQ). **Retired in favor of [Sleeper](http://cydia.saurik.com/package/org.thebigboss.sleeper/)**, which will offer support in the years to come. Snooze is available for free with purchase of Sleeper, and [both are open source](https://github.com/CoBrA2168/Sleeper).
 
 ## History
 
@@ -236,7 +236,7 @@ Just another day in tweak land.
 ## [License](LICENSE.md)
 
 	Snooze: Configurable snooze times.
-	Copyright (C) 2014 Julian (insanj) Weiss
+	Copyright (C) 2014-2015 Julian (insanj) Weiss
 	
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
